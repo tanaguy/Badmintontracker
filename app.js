@@ -17,7 +17,17 @@ function generateId() {
         return v.toString(16);
     });
 }
-function saveData(key, data) { localStorage.setItem(key, JSON.stringify(data)); }
+function saveData(key, data) {
+    try {
+        localStorage.setItem(key, JSON.stringify(data));
+    } catch (e) {
+        if (e.name === 'QuotaExceededError' || e.code === 22) {
+            showToast('Storage full! Try removing unused player photos.', 'error');
+        } else {
+            console.error('saveData error:', e);
+        }
+    }
+}
 function loadData(key) { const d = localStorage.getItem(key); return d ? JSON.parse(d) : null; }
 
 // ========== STATE ==========
@@ -475,6 +485,30 @@ function selectSkill(level) {
     document.querySelectorAll('.skill-btn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.level) === level));
 }
 
+// Compress image to max 200x200px JPEG (~15-30KB) before storing
+// Fixes: localStorage quota exceeded causing silent save failures
+function compressImage(file, maxSize = 200, quality = 0.75) {
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = e => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let w = img.width, h = img.height;
+                // Scale down keeping aspect ratio
+                if (w > h) { if (w > maxSize) { h = Math.round(h * maxSize / w); w = maxSize; } }
+                else       { if (h > maxSize) { w = Math.round(w * maxSize / h); h = maxSize; } }
+                canvas.width = w; canvas.height = h;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, w, h);
+                resolve(canvas.toDataURL('image/jpeg', quality));
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    });
+}
+
 function handleAvatarSelect(event) {
     // Flag prevents file-picker dismissal from triggering the overlay close
     state.filePickerJustClosed = true;
@@ -482,14 +516,13 @@ function handleAvatarSelect(event) {
 
     const file = event.target.files[0];
     if (!file) return;
-    const fr = new FileReader();
-    fr.onload = e => {
-        state.selectedAvatar = e.target.result;
+
+    compressImage(file).then(compressed => {
+        state.selectedAvatar = compressed;
         state.keepCurrentAvatar = false;
         document.getElementById('player-avatar-preview').innerHTML =
-            `<img src="${e.target.result}" alt="Avatar">`;
-    };
-    fr.readAsDataURL(file);
+            `<img src="${compressed}" alt="Avatar">`;
+    });
 }
 
 function savePlayer() {
@@ -635,6 +668,7 @@ function showMatchGenerator() {
     document.getElementById('skill-matching').checked = false;
     document.querySelectorAll('[data-type]').forEach(b => b.classList.toggle('active', b.dataset.type === 'singles'));
     renderGeneratorSuggestion('singles');
+    renderPlayPrediction('singles', 1);
     showModal('match-generator-modal');
 }
 
@@ -656,16 +690,74 @@ function renderGeneratorSuggestion(matchType) {
 function applySuggestedCount(count) {
     state.matchCount = count;
     document.getElementById('match-count').textContent = count;
+    renderPlayPrediction(state.matchType, count);
     showToast(`Set to ${count} match${count !== 1 ? 'es' : ''} ✓`);
+}
+
+// ========== FEATURE: PLAY COUNT PREDICTION ==========
+function renderPlayPrediction(matchType, matchCount) {
+    const el = document.getElementById('play-prediction');
+    if (!el || !state.currentSession) return;
+    const sessionPlayers = state.players.filter(p => state.currentSession.playerIds.includes(p.id));
+    if (sessionPlayers.length < 2) { el.classList.add('hidden'); return; }
+
+    // Get current game counts (played + pending already in queue)
+    const currentCounts = getPlayerGameCounts();
+    
+    // Simulate adding `matchCount` more matches using the same rotation logic
+    const simCounts = {};
+    sessionPlayers.forEach(p => { simCounts[p.id] = currentCounts[p.id] || 0; });
+
+    const playersPerMatch = matchType === 'singles' ? 2 : 4;
+    if (sessionPlayers.length < playersPerMatch) { el.classList.add('hidden'); return; }
+
+    for (let i = 0; i < matchCount; i++) {
+        // Pick the players with fewest simulated games (same rotation logic)
+        const sorted = [...sessionPlayers].sort((a, b) => {
+            const d = simCounts[a.id] - simCounts[b.id];
+            return d !== 0 ? d : 0; // stable sort for prediction (no random)
+        });
+        const chosen = sorted.slice(0, playersPerMatch);
+        chosen.forEach(p => { simCounts[p.id] += 1; });
+    }
+
+    // Build a compact bar chart per player
+    const maxGames = Math.max(...Object.values(simCounts), 1);
+    const rows = sessionPlayers
+        .sort((a, b) => simCounts[b.id] - simCounts[a.id])
+        .map(p => {
+            const current = currentCounts[p.id] || 0;
+            const after = simCounts[p.id];
+            const added = after - current;
+            const barPct = Math.round((after / maxGames) * 100);
+            const addedBadge = added > 0 ? `<span class="pred-added">+${added}</span>` : `<span class="pred-none">+0</span>`;
+            const initial = p.avatar ? `<img src="${p.avatar}" style="width:22px;height:22px;border-radius:50%;object-fit:cover;">` : `<span class="pred-initial">${p.name.charAt(0)}</span>`;
+            return `
+                <div class="pred-row">
+                    <div class="pred-avatar">${initial}</div>
+                    <div class="pred-name">${p.name}</div>
+                    <div class="pred-bar-wrap">
+                        <div class="pred-bar" style="width:${barPct}%"></div>
+                    </div>
+                    <div class="pred-count">${after} ${addedBadge}</div>
+                </div>`;
+        }).join('');
+
+    el.innerHTML = `
+        <div class="pred-header">📈 Predicted play count after ${matchCount} more match${matchCount !== 1 ? 'es' : ''}</div>
+        <div class="pred-list">${rows}</div>`;
+    el.classList.remove('hidden');
 }
 function selectMatchType(type) {
     state.matchType = type;
     document.querySelectorAll('[data-type]').forEach(b => b.classList.toggle('active', b.dataset.type === type));
     renderGeneratorSuggestion(type);
+    renderPlayPrediction(type, state.matchCount);
 }
 function adjustMatchCount(delta) {
-    state.matchCount = Math.max(1, Math.min(10, state.matchCount + delta));
+    state.matchCount = Math.max(1, Math.min(30, state.matchCount + delta));
     document.getElementById('match-count').textContent = state.matchCount;
+    renderPlayPrediction(state.matchType, state.matchCount);
 }
 function generateMatches() {
     const before = state.pendingMatches.length;

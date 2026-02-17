@@ -296,3 +296,86 @@ body {
     flex-shrink: 0;
 }
 .suggestion-apply-btn:hover { background: var(--success-dark); }
+
+/* ========== PLAY COUNT PREDICTION ========== */
+#play-prediction {
+    background: var(--gray-50);
+    border: 1.5px solid var(--gray-200);
+    border-radius: .75rem;
+    padding: .875rem 1rem;
+    margin-bottom: 1rem;
+}
+.pred-header {
+    font-size: .82rem;
+    font-weight: 600;
+    color: var(--gray-600);
+    margin-bottom: .6rem;
+}
+.pred-list { display: flex; flex-direction: column; gap: .4rem; }
+.pred-row {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+}
+.pred-avatar {
+    width: 22px; height: 22px;
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+}
+.pred-initial {
+    display: inline-flex;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: white;
+    font-size: .65rem;
+    font-weight: 700;
+    align-items: center;
+    justify-content: center;
+}
+.pred-name {
+    font-size: .8rem;
+    color: var(--gray-700);
+    width: 72px;
+    flex-shrink: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.pred-bar-wrap {
+    flex: 1;
+    height: 8px;
+    background: var(--gray-200);
+    border-radius: 4px;
+    overflow: hidden;
+}
+.pred-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary), var(--purple));
+    border-radius: 4px;
+    transition: width .35s ease;
+    min-width: 4px;
+}
+.pred-count {
+    font-size: .8rem;
+    font-weight: 600;
+    color: var(--gray-700);
+    min-width: 44px;
+    text-align: right;
+    display: flex;
+    align-items: center;
+    gap: .3rem;
+    justify-content: flex-end;
+}
+.pred-added {
+    background: rgba(16,185,129,.15);
+    color: var(--success-dark);
+    border-radius: .3rem;
+    padding: .05rem .3rem;
+    font-size: .72rem;
+    font-weight: 700;
+}
+.pred-none {
+    color: var(--gray-400);
+    font-size: .72rem;
+}
