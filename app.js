@@ -50,7 +50,10 @@ let state = {
     // Undo
     undoStack: null,
     undoTimer: null,
-    toastTimer: null
+    toastTimer: null,
+
+    // Prevents file picker dismissal from closing modal overlay
+    filePickerJustClosed: false
 };
 
 // ========== INIT ==========
@@ -338,7 +341,9 @@ function showModal(id) {
     document.getElementById('modal-overlay').classList.remove('hidden');
     document.getElementById(id).classList.remove('hidden');
 }
-function closeModal() {
+function closeModal(fromOverlay = false) {
+    // If triggered by overlay click right after file picker closed, ignore it
+    if (fromOverlay && state.filePickerJustClosed) return;
     document.getElementById('modal-overlay').classList.add('hidden');
     document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
     state.editingPlayer = null; state.currentMatch = null; state.editingMatch = null;
@@ -353,6 +358,9 @@ function showStartSession() {
     nameInput.focus(); nameInput.select();
     state.selectedPlayers.clear();
     renderSessionPlayerList();
+    // Clear suggestion until players are selected
+    const sugg = document.getElementById('match-suggestion');
+    if (sugg) sugg.classList.add('hidden');
     showModal('start-session-modal');
 }
 
@@ -370,6 +378,38 @@ function renderSessionPlayerList() {
 function togglePlayerSelection(id) {
     state.selectedPlayers.has(id) ? state.selectedPlayers.delete(id) : state.selectedPlayers.add(id);
     renderSessionPlayerList();
+    renderMatchSuggestion();
+}
+
+// ========== FEATURE: SMART MATCH SUGGESTION ==========
+function calcSuggestedMatches(playerCount, matchType) {
+    if (playerCount < 2) return { singles: 0, doubles: 0 };
+    // Minimum matches for everyone to play once per round
+    const singles = Math.ceil(playerCount / 2);
+    const doubles = playerCount >= 4 ? Math.ceil(playerCount / 4) : 0;
+    return { singles, doubles };
+}
+
+function renderMatchSuggestion() {
+    const el = document.getElementById('match-suggestion');
+    if (!el) return;
+    const n = state.selectedPlayers.size;
+    if (n < 2) { el.classList.add('hidden'); return; }
+    const s = calcSuggestedMatches(n, 'singles');
+    const d = n >= 4 ? calcSuggestedMatches(n, 'doubles') : null;
+    let html = `<div class="suggestion-header">💡 Suggested to give everyone 1 game:</div><div class="suggestion-pills">`;
+    html += `<button class="suggestion-pill" onclick="applySuggestion(${s.singles},'singles')">⚡ ${s.singles} singles match${s.singles !== 1 ? 'es' : ''}</button>`;
+    if (d) html += `<button class="suggestion-pill" onclick="applySuggestion(${d.doubles},'doubles')">👥 ${d.doubles} doubles match${d.doubles !== 1 ? 'es' : ''}</button>`;
+    html += `</div>`;
+    el.innerHTML = html;
+    el.classList.remove('hidden');
+}
+
+// Called from session start modal pills — stores preference for after session starts
+function applySuggestion(count, type) {
+    state._suggestedCount = count;
+    state._suggestedType = type;
+    showToast(`After starting, generate ${count} ${type} match${count !== 1 ? 'es' : ''} for equal play 👍`);
 }
 
 function startSession() {
@@ -436,16 +476,18 @@ function selectSkill(level) {
 }
 
 function handleAvatarSelect(event) {
+    // Flag prevents file-picker dismissal from triggering the overlay close
+    state.filePickerJustClosed = true;
+    setTimeout(() => { state.filePickerJustClosed = false; }, 800);
+
     const file = event.target.files[0];
     if (!file) return;
-    new FileReader().addEventListener('load', e => {
-        state.selectedAvatar = e.target.result; state.keepCurrentAvatar = false;
-        document.getElementById('player-avatar-preview').innerHTML = `<img src="${e.target.result}" alt="Avatar">`;
-    }, { once: true });
     const fr = new FileReader();
     fr.onload = e => {
-        state.selectedAvatar = e.target.result; state.keepCurrentAvatar = false;
-        document.getElementById('player-avatar-preview').innerHTML = `<img src="${e.target.result}" alt="Avatar">`;
+        state.selectedAvatar = e.target.result;
+        state.keepCurrentAvatar = false;
+        document.getElementById('player-avatar-preview').innerHTML =
+            `<img src="${e.target.result}" alt="Avatar">`;
     };
     fr.readAsDataURL(file);
 }
@@ -592,11 +634,34 @@ function showMatchGenerator() {
     document.getElementById('match-count').textContent = '1';
     document.getElementById('skill-matching').checked = false;
     document.querySelectorAll('[data-type]').forEach(b => b.classList.toggle('active', b.dataset.type === 'singles'));
+    renderGeneratorSuggestion('singles');
     showModal('match-generator-modal');
+}
+
+function renderGeneratorSuggestion(matchType) {
+    const el = document.getElementById('generator-suggestion');
+    if (!el || !state.currentSession) return;
+    const n = state.currentSession.playerIds.length;
+    const needed = matchType === 'singles' ? Math.ceil(n / 2) : Math.ceil(n / 4);
+    const playersPerMatch = matchType === 'singles' ? 2 : 4;
+    if (n < playersPerMatch) { el.classList.add('hidden'); return; }
+    el.innerHTML = `
+        <div class="generator-suggestion">
+            <span class="suggestion-text">💡 <strong>${needed} match${needed !== 1 ? 'es' : ''}</strong> = everyone plays once (${n} players)</span>
+            <button class="suggestion-apply-btn" onclick="applySuggestedCount(${needed})">Use this</button>
+        </div>`;
+    el.classList.remove('hidden');
+}
+
+function applySuggestedCount(count) {
+    state.matchCount = count;
+    document.getElementById('match-count').textContent = count;
+    showToast(`Set to ${count} match${count !== 1 ? 'es' : ''} ✓`);
 }
 function selectMatchType(type) {
     state.matchType = type;
     document.querySelectorAll('[data-type]').forEach(b => b.classList.toggle('active', b.dataset.type === type));
+    renderGeneratorSuggestion(type);
 }
 function adjustMatchCount(delta) {
     state.matchCount = Math.max(1, Math.min(10, state.matchCount + delta));
