@@ -1,16 +1,15 @@
 // ================================
-// BADMINTON TRACKER - WEB APP
+// BADMINTON TRACKER - WEB APP v2.0
 // ================================
 
-// ========== DATA MANAGEMENT ==========
 const DB = {
     players: 'badminton_players',
     matches: 'badminton_matches',
     sessions: 'badminton_sessions',
-    currentSession: 'badminton_current_session'
+    currentSession: 'badminton_current_session',
+    matchCounter: 'badminton_match_counter'
 };
 
-// Generate UUID
 function generateId() {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
         const r = Math.random() * 16 | 0;
@@ -18,16 +17,8 @@ function generateId() {
         return v.toString(16);
     });
 }
-
-// Storage functions
-function saveData(key, data) {
-    localStorage.setItem(key, JSON.stringify(data));
-}
-
-function loadData(key) {
-    const data = localStorage.getItem(key);
-    return data ? JSON.parse(data) : null;
-}
+function saveData(key, data) { localStorage.setItem(key, JSON.stringify(data)); }
+function loadData(key) { const d = localStorage.getItem(key); return d ? JSON.parse(d) : null; }
 
 // ========== STATE ==========
 let state = {
@@ -36,55 +27,59 @@ let state = {
     sessions: loadData(DB.sessions) || [],
     currentSession: loadData(DB.currentSession) || null,
     pendingMatches: [],
+    matchCounter: loadData(DB.matchCounter) || 0,
+
+    // Modal state
     selectedPlayers: new Set(),
     editingPlayer: null,
     selectedSkill: 3,
     selectedAvatar: null,
+    keepCurrentAvatar: true,
+
+    // Match state
     matchType: 'singles',
     matchCount: 1,
-    useSkillMatching: false,
     currentMatch: null,
+    editingMatch: null,
     selectedWinner: 1,
+
+    // View state
     rankingView: 'overall',
-    historyView: 'sessions'
+    historyView: 'sessions',
+
+    // Undo
+    undoStack: null,
+    undoTimer: null,
+    toastTimer: null
 };
 
-// ========== INITIALIZATION ==========
+// ========== INIT ==========
 document.addEventListener('DOMContentLoaded', () => {
-    setupEventListeners();
+    document.querySelectorAll('.tab-btn').forEach(btn =>
+        btn.addEventListener('click', () => switchTab(btn.dataset.tab))
+    );
     render();
-    
-    // Register service worker for PWA
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('service-worker.js');
-    }
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('service-worker.js').catch(() => {});
 });
 
-function setupEventListeners() {
-    // Tab switching
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.addEventListener('click', () => switchTab(btn.dataset.tab));
-    });
+// ========== STRAVA-STYLE SESSION NAME ==========
+function generateSessionName() {
+    const now = new Date();
+    const h = now.getHours();
+    const day = now.toLocaleDateString('en-US', { weekday: 'long' });
+    const period = h < 12 ? 'Morning' : h < 17 ? 'Afternoon' : h < 21 ? 'Evening' : 'Night';
+    return `${day} ${period}`;
 }
 
-// ========== TAB NAVIGATION ==========
+// ========== TABS ==========
 function switchTab(tabName) {
-    // Update tab buttons
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.tab === tabName);
-    });
-    
-    // Update tab panes
-    document.querySelectorAll('.tab-pane').forEach(pane => {
-        pane.classList.remove('active');
-    });
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tabName));
+    document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
     document.getElementById(`${tabName}-tab`).classList.add('active');
-    
-    // Render the active tab
     render();
 }
 
-// ========== RENDER FUNCTIONS ==========
+// ========== RENDER ==========
 function render() {
     renderSession();
     renderPlayers();
@@ -95,871 +90,660 @@ function render() {
 function renderSession() {
     const noSession = document.getElementById('no-session-view');
     const activeSession = document.getElementById('active-session-view');
-    
     if (!state.currentSession) {
         noSession.classList.remove('hidden');
         activeSession.classList.add('hidden');
     } else {
         noSession.classList.add('hidden');
         activeSession.classList.remove('hidden');
-        
-        const session = state.currentSession;
-        document.getElementById('session-name').textContent = session.name;
-        document.getElementById('session-player-count').textContent = 
-            `${session.playerIds.length} Player${session.playerIds.length !== 1 ? 's' : ''}`;
-        
+        document.getElementById('session-name').textContent = state.currentSession.name;
+        const count = state.currentSession.playerIds.length;
+        document.getElementById('session-player-count').textContent = `${count} Player${count !== 1 ? 's' : ''}`;
         renderMatchQueue();
     }
 }
 
 function renderMatchQueue() {
     const queue = document.getElementById('match-queue');
-    
     if (state.pendingMatches.length === 0) {
-        queue.innerHTML = `
-            <div class="empty-state-small">
-                <p>No matches in queue</p>
-                <p class="text-muted">Tap 'Generate Matches' to create matches</p>
-            </div>
-        `;
-    } else {
-        queue.innerHTML = state.pendingMatches.map(match => `
-            <div class="match-card" onclick="showRecordMatch('${match.id}')">
-                <div class="match-type-badge match-type-${match.matchType}">
-                    ${match.matchType.charAt(0).toUpperCase() + match.matchType.slice(1)}
-                </div>
-                <div class="match-teams">
-                    <div class="match-team">
-                        ${match.team1Players.map(id => renderPlayerBadge(id)).join('')}
-                    </div>
-                    <div class="match-vs">VS</div>
-                    <div class="match-team">
-                        ${match.team2Players.map(id => renderPlayerBadge(id)).join('')}
-                    </div>
-                </div>
-            </div>
-        `).join('');
+        queue.innerHTML = `<div class="empty-state-small"><p>No matches in queue</p><p class="text-muted">Tap 'Generate Matches' to create matches</p></div>`;
+        return;
     }
+    queue.innerHTML = state.pendingMatches.map(match => `
+        <div class="match-card" onclick="showRecordMatch('${match.id}')">
+            <div class="match-card-header">
+                <span class="match-number-label">Match #${match.matchNumber}</span>
+                <span class="match-type-badge match-type-${match.matchType}">${match.matchType === 'singles' ? '⚡ Singles' : '👥 Doubles'}</span>
+            </div>
+            <div class="match-teams">
+                <div class="match-team">${match.team1Players.map(id => renderPlayerBadge(id)).join('')}</div>
+                <div class="match-vs">VS</div>
+                <div class="match-team">${match.team2Players.map(id => renderPlayerBadge(id)).join('')}</div>
+            </div>
+            <div class="tap-hint">Tap to record result →</div>
+        </div>`).join('');
 }
 
 function renderPlayerBadge(playerId) {
-    const player = state.players.find(p => p.id === playerId);
-    if (!player) return '';
-    
-    const initial = player.name.charAt(0).toUpperCase();
-    const avatarContent = player.avatar 
-        ? `<img src="${player.avatar}" alt="${player.name}">`
-        : initial;
-    
-    return `
-        <div class="player-badge">
-            <div class="avatar">${avatarContent}</div>
-            <span class="player-name">${player.name}</span>
-        </div>
-    `;
+    const p = state.players.find(p => p.id === playerId);
+    if (!p) return '';
+    const av = p.avatar ? `<img src="${p.avatar}" alt="${p.name}">` : p.name.charAt(0).toUpperCase();
+    return `<div class="player-badge"><div class="avatar">${av}</div><span class="player-name">${p.name}</span></div>`;
 }
 
 function renderPlayers() {
     const list = document.getElementById('players-list');
-    
     if (state.players.length === 0) {
-        list.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-icon">👥</div>
-                <h3>No Players</h3>
-                <p>Add players to start tracking matches</p>
-            </div>
-        `;
-    } else {
-        list.innerHTML = state.players.map(player => {
-            const stats = getPlayerStats(player.id);
-            const initial = player.name.charAt(0).toUpperCase();
-            const avatarContent = player.avatar 
-                ? `<img src="${player.avatar}" alt="${player.name}">`
-                : initial;
-            
-            return `
-                <div class="player-row" onclick="editPlayer('${player.id}')">
-                    <div class="avatar-large">${avatarContent}</div>
-                    <div class="player-info">
-                        <h3>${player.name}</h3>
-                        <div class="player-stats">${stats.totalWins}W - ${stats.totalLosses}L</div>
-                    </div>
-                    <div class="player-winrate">
-                        <div class="winrate-value">${stats.winRate.toFixed(0)}%</div>
-                        <div class="winrate-label">Win Rate</div>
-                    </div>
-                </div>
-            `;
-        }).join('');
+        list.innerHTML = `<div class="empty-state"><div class="empty-icon">👥</div><h3>No Players</h3><p>Add players to start tracking</p></div>`;
+        return;
     }
+    list.innerHTML = state.players.map(player => {
+        const stats = getPlayerStats(player.id);
+        const av = player.avatar ? `<img src="${player.avatar}" alt="${player.name}">` : player.name.charAt(0).toUpperCase();
+        return `
+            <div class="player-row">
+                <div class="avatar-large" onclick="editPlayer('${player.id}')">${av}</div>
+                <div class="player-info" onclick="editPlayer('${player.id}')">
+                    <h3>${player.name}</h3>
+                    <div class="player-stats">${stats.totalWins}W − ${stats.totalLosses}L · ${stats.winRate.toFixed(0)}% win rate</div>
+                </div>
+                <button class="delete-btn" onclick="deletePlayer('${player.id}')">🗑</button>
+            </div>`;
+    }).join('');
 }
 
 function renderRankings() {
     const list = document.getElementById('rankings-list');
     const stats = getAllPlayerStats();
-    
     if (stats.length === 0) {
-        list.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-icon">📊</div>
-                <h3>No Rankings Yet</h3>
-                <p>Play some matches to see rankings</p>
-            </div>
-        `;
+        list.innerHTML = `<div class="empty-state"><div class="empty-icon">📊</div><h3>No Rankings Yet</h3><p>Play some matches to see rankings</p></div>`;
         return;
     }
-    
-    // Sort by win rate
     const isSession = state.rankingView === 'session';
     stats.sort((a, b) => {
-        const rateA = isSession ? a.sessionWinRate : a.winRate;
-        const rateB = isSession ? b.sessionWinRate : b.winRate;
-        const winsA = isSession ? a.sessionWins : a.totalWins;
-        const winsB = isSession ? b.sessionWins : b.totalWins;
-        
-        if (rateA === rateB) return winsB - winsA;
-        return rateB - rateA;
+        const rA = isSession ? a.sessionWinRate : a.winRate;
+        const rB = isSession ? b.sessionWinRate : b.winRate;
+        if (rA === rB) return (isSession ? b.sessionWins : b.totalWins) - (isSession ? a.sessionWins : a.totalWins);
+        return rB - rA;
     });
-    
-    list.innerHTML = stats.map((playerStats, index) => {
-        const rank = index + 1;
-        const rankClass = rank <= 3 ? `rank-${rank}` : 'rank-other';
-        const isTopThree = rank <= 3;
+    list.innerHTML = stats.map((ps, i) => {
+        const rank = i + 1;
         const medal = rank === 1 ? '🏆' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `#${rank}`;
-        
-        const wins = isSession ? playerStats.sessionWins : playerStats.totalWins;
-        const losses = isSession ? playerStats.sessionLosses : playerStats.totalLosses;
-        const winRate = isSession ? playerStats.sessionWinRate : playerStats.winRate;
-        
-        const initial = playerStats.player.name.charAt(0).toUpperCase();
-        const avatarContent = playerStats.player.avatar 
-            ? `<img src="${playerStats.player.avatar}" alt="${playerStats.player.name}">`
-            : initial;
-        
+        const wins = isSession ? ps.sessionWins : ps.totalWins;
+        const losses = isSession ? ps.sessionLosses : ps.totalLosses;
+        const wr = isSession ? ps.sessionWinRate : ps.winRate;
+        const av = ps.player.avatar ? `<img src="${ps.player.avatar}" alt="${ps.player.name}">` : ps.player.name.charAt(0).toUpperCase();
         return `
-            <div class="ranking-row ${isTopThree ? 'top-3' : ''}">
-                <div class="rank-badge ${rankClass}">${medal}</div>
-                <div class="avatar-large">${avatarContent}</div>
-                <div class="player-info">
-                    <h3>${playerStats.player.name}</h3>
-                    <div class="player-stats">${wins}W - ${losses}L</div>
-                </div>
-                <div class="player-winrate">
-                    <div class="winrate-value">${winRate.toFixed(0)}%</div>
-                    <div class="winrate-label">Win Rate</div>
-                </div>
-            </div>
-        `;
+            <div class="ranking-row ${rank <= 3 ? 'top-3' : ''}">
+                <div class="rank-badge rank-${rank <= 3 ? rank : 'other'}">${medal}</div>
+                <div class="avatar-large">${av}</div>
+                <div class="player-info"><h3>${ps.player.name}</h3><div class="player-stats">${wins}W − ${losses}L</div></div>
+                <div class="player-winrate"><div class="winrate-value">${wr.toFixed(0)}%</div><div class="winrate-label">Win Rate</div></div>
+            </div>`;
     }).join('');
 }
 
 function renderHistory() {
     const list = document.getElementById('history-list');
-    
     if (state.historyView === 'sessions') {
-        const sessions = [...state.sessions].sort((a, b) => 
-            new Date(b.startDate) - new Date(a.startDate)
-        );
-        
-        if (sessions.length === 0) {
-            list.innerHTML = `
-                <div class="empty-state">
-                    <div class="empty-icon">🕐</div>
-                    <h3>No Sessions Yet</h3>
-                    <p>Start a session to see history</p>
-                </div>
-            `;
-        } else {
-            list.innerHTML = sessions.map(session => {
-                const sessionMatches = state.matches.filter(m => 
-                    session.matchIds.includes(m.id)
-                );
-                const date = new Date(session.startDate).toLocaleString();
-                
-                return `
-                    <div class="history-item">
-                        <div class="history-header">
-                            <div>
-                                <h3>${session.name}</h3>
-                                <p class="text-muted">${date}</p>
-                            </div>
-                            ${session.isActive ? '<span class="match-type-badge match-type-singles">Active</span>' : ''}
+        const sessions = [...state.sessions].sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
+        if (!sessions.length) {
+            list.innerHTML = `<div class="empty-state"><div class="empty-icon">🕐</div><h3>No Sessions Yet</h3></div>`; return;
+        }
+        list.innerHTML = sessions.map(session => {
+            const count = state.matches.filter(m => session.matchIds.includes(m.id)).length;
+            const date = new Date(session.startDate).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            return `
+                <div class="history-item">
+                    <div class="history-header">
+                        <div><h3>${session.name}</h3><p class="text-muted">${date}</p></div>
+                        <div style="display:flex;gap:0.5rem;align-items:center;">
+                            ${session.isActive ? '<span class="badge-active">Active</span>' : ''}
+                            <button class="icon-btn danger" onclick="deleteSession('${session.id}')">🗑</button>
                         </div>
-                        <p class="text-muted">
-                            👥 ${session.playerIds.length} players · 
-                            🏸 ${sessionMatches.length} matches
-                        </p>
                     </div>
-                `;
-            }).join('');
-        }
+                    <p class="text-muted">👥 ${session.playerIds.length} players · 🏸 ${count} matches</p>
+                </div>`;
+        }).join('');
     } else {
-        const matches = [...state.matches].sort((a, b) => 
-            new Date(b.date) - new Date(a.date)
-        );
-        
-        if (matches.length === 0) {
-            list.innerHTML = `
-                <div class="empty-state">
-                    <div class="empty-icon">🕐</div>
-                    <h3>No Matches Yet</h3>
-                    <p>Play some matches to see history</p>
-                </div>
-            `;
-        } else {
-            list.innerHTML = matches.map(match => renderMatchHistory(match)).join('');
+        const matches = [...state.matches].sort((a, b) => new Date(b.date) - new Date(a.date));
+        if (!matches.length) {
+            list.innerHTML = `<div class="empty-state"><div class="empty-icon">🏸</div><h3>No Matches Yet</h3></div>`; return;
         }
+        list.innerHTML = matches.map(match => {
+            const t1 = match.team1Players.map(id => state.players.find(p => p.id === id)?.name || '?').join(' & ');
+            const t2 = match.team2Players.map(id => state.players.find(p => p.id === id)?.name || '?').join(' & ');
+            const t1won = match.winnerTeam === 1, t2won = match.winnerTeam === 2;
+            const date = new Date(match.date).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            const numLabel = match.matchNumber ? `<span class="text-muted" style="font-size:.75rem;">Match #${match.matchNumber}</span>` : '';
+            return `
+                <div class="history-item">
+                    <div class="history-header">
+                        <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
+                            <span class="match-type-badge match-type-${match.matchType}">${match.matchType === 'singles' ? '⚡ Singles' : '👥 Doubles'}</span>
+                            ${numLabel}
+                        </div>
+                        <div style="display:flex;gap:.4rem;">
+                            <button class="icon-btn" onclick="showEditMatch('${match.id}')" title="Edit">✏️</button>
+                            <button class="icon-btn danger" onclick="deleteMatch('${match.id}')" title="Delete">🗑</button>
+                        </div>
+                    </div>
+                    <div class="match-result">
+                        <div class="team-result ${t1won ? 'winner' : ''}">${t1won ? '🏆 ' : ''}${t1}${match.team1Score !== undefined ? `<span class="score-chip">${match.team1Score}</span>` : ''}</div>
+                        <div class="vs-divider">VS</div>
+                        <div class="team-result right ${t2won ? 'winner' : ''}">${match.team2Score !== undefined ? `<span class="score-chip">${match.team2Score}</span>` : ''}${t2won ? ' 🏆' : ''}${t2}</div>
+                    </div>
+                    <p class="text-muted" style="font-size:.75rem;margin-top:.25rem;">${date}</p>
+                </div>`;
+        }).join('');
     }
 }
 
-function renderMatchHistory(match) {
-    const team1Names = match.team1Players
-        .map(id => state.players.find(p => p.id === id)?.name || 'Unknown')
-        .join(' & ');
-    const team2Names = match.team2Players
-        .map(id => state.players.find(p => p.id === id)?.name || 'Unknown')
-        .join(' & ');
-    
-    const team1Won = match.winnerTeam === 1;
-    const team2Won = match.winnerTeam === 2;
-    const date = new Date(match.date).toLocaleString();
-    
-    return `
-        <div class="history-item">
-            <div class="history-header">
-                <span class="match-type-badge match-type-${match.matchType}">
-                    ${match.matchType.charAt(0).toUpperCase() + match.matchType.slice(1)}
-                </span>
-                <p class="text-muted">${date}</p>
-            </div>
-            <div class="match-result">
-                <div class="team-result ${team1Won ? 'winner' : ''}">
-                    ${team1Names}
-                    ${match.team1Score !== undefined ? `(${match.team1Score})` : ''}
-                </div>
-                <div>VS</div>
-                <div class="team-result ${team2Won ? 'winner' : ''}" style="text-align: right;">
-                    ${team2Names}
-                    ${match.team2Score !== undefined ? `(${match.team2Score})` : ''}
-                </div>
-            </div>
-            ${match.winnerTeam ? `
-                <p class="text-muted">✓ Winner: Team ${match.winnerTeam}</p>
-            ` : ''}
-        </div>
-    `;
-}
-
-// ========== STATISTICS ==========
+// ========== STATS ==========
 function getPlayerStats(playerId) {
-    const playerMatches = state.matches.filter(m => 
-        m.winnerTeam && (m.team1Players.includes(playerId) || m.team2Players.includes(playerId))
-    );
-    
-    let totalWins = 0;
-    let totalLosses = 0;
-    let sessionWins = 0;
-    let sessionLosses = 0;
-    
-    playerMatches.forEach(match => {
-        const isTeam1 = match.team1Players.includes(playerId);
-        const won = (isTeam1 && match.winnerTeam === 1) || (!isTeam1 && match.winnerTeam === 2);
-        
-        if (won) totalWins++;
-        else totalLosses++;
-        
-        // Session stats
-        if (state.currentSession && state.currentSession.matchIds.includes(match.id)) {
-            if (won) sessionWins++;
-            else sessionLosses++;
+    const playerMatches = state.matches.filter(m =>
+        m.winnerTeam && (m.team1Players.includes(playerId) || m.team2Players.includes(playerId)));
+    let tw = 0, tl = 0, sw = 0, sl = 0;
+    playerMatches.forEach(m => {
+        const isT1 = m.team1Players.includes(playerId);
+        const won = (isT1 && m.winnerTeam === 1) || (!isT1 && m.winnerTeam === 2);
+        if (won) tw++; else tl++;
+        if (state.currentSession && state.currentSession.matchIds.includes(m.id)) {
+            if (won) sw++; else sl++;
         }
     });
-    
-    const total = totalWins + totalLosses;
-    const sessionTotal = sessionWins + sessionLosses;
-    
     return {
-        totalWins,
-        totalLosses,
-        sessionWins,
-        sessionLosses,
-        winRate: total > 0 ? (totalWins / total) * 100 : 0,
-        sessionWinRate: sessionTotal > 0 ? (sessionWins / sessionTotal) * 100 : 0
+        totalWins: tw, totalLosses: tl, sessionWins: sw, sessionLosses: sl,
+        winRate: tw + tl > 0 ? (tw / (tw + tl)) * 100 : 0,
+        sessionWinRate: sw + sl > 0 ? (sw / (sw + sl)) * 100 : 0
     };
 }
-
-function getAllPlayerStats() {
-    return state.players.map(player => ({
-        player,
-        ...getPlayerStats(player.id)
-    }));
-}
+function getAllPlayerStats() { return state.players.map(p => ({ player: p, ...getPlayerStats(p.id) })); }
 
 // ========== MATCH GENERATION ==========
 function getPlayerGameCounts() {
     const counts = {};
-    
-    // Initialize all session players
-    if (state.currentSession) {
-        state.currentSession.playerIds.forEach(id => {
-            counts[id] = 0;
-        });
-        
-        // Count from matches
-        const sessionMatches = state.matches.filter(m => 
-            state.currentSession.matchIds.includes(m.id)
-        );
-        
-        sessionMatches.forEach(match => {
-            [...match.team1Players, ...match.team2Players].forEach(id => {
-                counts[id] = (counts[id] || 0) + 1;
-            });
-        });
-        
-        // Count from pending matches
-        state.pendingMatches.forEach(match => {
-            [...match.team1Players, ...match.team2Players].forEach(id => {
-                counts[id] = (counts[id] || 0) + 1;
-            });
-        });
-    }
-    
+    if (!state.currentSession) return counts;
+    state.currentSession.playerIds.forEach(id => { counts[id] = 0; });
+    state.matches.filter(m => state.currentSession.matchIds.includes(m.id))
+        .forEach(m => [...m.team1Players, ...m.team2Players].forEach(id => { counts[id] = (counts[id] || 0) + 1; }));
+    state.pendingMatches.forEach(m =>
+        [...m.team1Players, ...m.team2Players].forEach(id => { counts[id] = (counts[id] || 0) + 1; }));
     return counts;
 }
 
 function generateMatchesEqualRotation(matchType, count) {
-    if (!state.currentSession) return;
-    
-    const sessionPlayers = state.players.filter(p => 
-        state.currentSession.playerIds.includes(p.id)
-    );
-    
-    const playersNeeded = matchType === 'singles' ? 2 : 4;
-    if (sessionPlayers.length < playersNeeded) {
-        alert(`Need at least ${playersNeeded} players for ${matchType}`);
-        return;
-    }
-    
-    for (let i = 0; i < count; i++) {
-        if (matchType === 'singles') {
-            generateSinglesMatch(sessionPlayers);
-        } else {
-            generateDoublesMatch(sessionPlayers);
-        }
-    }
+    const players = state.players.filter(p => state.currentSession.playerIds.includes(p.id));
+    const needed = matchType === 'singles' ? 2 : 4;
+    if (players.length < needed) { showToast(`Need ${needed}+ players for ${matchType}`, 'error'); return; }
+    for (let i = 0; i < count; i++) matchType === 'singles' ? genSingles(players) : genDoubles(players);
 }
 
-function generateSinglesMatch(players) {
-    const gameCounts = getPlayerGameCounts();
-    
-    // Sort by game count, random tiebreaker
+function genSingles(players) {
+    const counts = getPlayerGameCounts();
     const sorted = [...players].sort((a, b) => {
-        const countA = gameCounts[a.id] || 0;
-        const countB = gameCounts[b.id] || 0;
-        if (countA === countB) return Math.random() - 0.5;
-        return countA - countB;
+        const d = (counts[a.id] || 0) - (counts[b.id] || 0);
+        return d !== 0 ? d : Math.random() - 0.5;
     });
-    
-    const player1 = sorted[0];
-    const player2 = sorted[1];
-    
-    state.pendingMatches.push({
-        id: generateId(),
-        matchType: 'singles',
-        team1Players: [player1.id],
-        team2Players: [player2.id]
-    });
+    state.matchCounter++;
+    saveData(DB.matchCounter, state.matchCounter);
+    state.pendingMatches.push({ id: generateId(), matchType: 'singles', matchNumber: state.matchCounter, team1Players: [sorted[0].id], team2Players: [sorted[1].id] });
 }
 
-function generateDoublesMatch(players) {
-    const gameCounts = getPlayerGameCounts();
-    
-    // Sort by game count
+function genDoubles(players) {
+    const counts = getPlayerGameCounts();
     const sorted = [...players].sort((a, b) => {
-        const countA = gameCounts[a.id] || 0;
-        const countB = gameCounts[b.id] || 0;
-        if (countA === countB) return Math.random() - 0.5;
-        return countA - countB;
+        const d = (counts[a.id] || 0) - (counts[b.id] || 0);
+        return d !== 0 ? d : Math.random() - 0.5;
     });
-    
-    // Take 4 players who have played least
-    const selected = sorted.slice(0, 4);
-    
-    // Randomly assign to teams
-    const shuffled = selected.sort(() => Math.random() - 0.5);
-    const team1 = [shuffled[0].id, shuffled[1].id];
-    const team2 = [shuffled[2].id, shuffled[3].id];
-    
-    state.pendingMatches.push({
-        id: generateId(),
-        matchType: 'doubles',
-        team1Players: team1,
-        team2Players: team2
-    });
+    const s = sorted.slice(0, 4).sort(() => Math.random() - 0.5);
+    state.matchCounter++;
+    saveData(DB.matchCounter, state.matchCounter);
+    state.pendingMatches.push({ id: generateId(), matchType: 'doubles', matchNumber: state.matchCounter, team1Players: [s[0].id, s[1].id], team2Players: [s[2].id, s[3].id] });
 }
 
 function generateMatchesSkillBased(matchType, count) {
-    if (!state.currentSession) return;
-    
-    const sessionPlayers = state.players.filter(p => 
-        state.currentSession.playerIds.includes(p.id)
-    );
-    
-    const playersNeeded = matchType === 'singles' ? 2 : 4;
-    if (sessionPlayers.length < playersNeeded) {
-        alert(`Need at least ${playersNeeded} players for ${matchType}`);
-        return;
-    }
-    
-    const gameCounts = getPlayerGameCounts();
-    const minGames = Math.min(...Object.values(gameCounts));
-    const available = sessionPlayers.filter(p => 
-        (gameCounts[p.id] || 0) <= minGames + 1
-    );
-    
+    const players = state.players.filter(p => state.currentSession.playerIds.includes(p.id));
+    const needed = matchType === 'singles' ? 2 : 4;
+    if (players.length < needed) { showToast(`Need ${needed}+ players for ${matchType}`, 'error'); return; }
+    const counts = getPlayerGameCounts();
+    const min = Math.min(...Object.values(counts));
+    const avail = players.filter(p => (counts[p.id] || 0) <= min + 1);
     for (let i = 0; i < count; i++) {
-        if (matchType === 'singles') {
-            generateSkillSingles(available);
-        } else {
-            generateSkillDoubles(available);
-        }
+        if (matchType === 'singles') genSkillSingles(avail);
+        else genSkillDoubles(avail);
     }
 }
 
-function generateSkillSingles(players) {
+function genSkillSingles(players) {
     if (players.length < 2) return;
-    
     const sorted = [...players].sort((a, b) => a.skillLevel - b.skillLevel);
-    const midIndex = Math.floor(sorted.length / 2);
-    const range = sorted.slice(Math.max(0, midIndex - 1), Math.min(sorted.length, midIndex + 2));
-    const shuffled = range.sort(() => Math.random() - 0.5);
-    
-    state.pendingMatches.push({
-        id: generateId(),
-        matchType: 'singles',
-        team1Players: [shuffled[0].id],
-        team2Players: [shuffled[1].id]
-    });
+    const mid = Math.floor(sorted.length / 2);
+    const candidates = sorted.slice(Math.max(0, mid - 1), Math.min(sorted.length, mid + 2)).sort(() => Math.random() - 0.5);
+    state.matchCounter++;
+    saveData(DB.matchCounter, state.matchCounter);
+    state.pendingMatches.push({ id: generateId(), matchType: 'singles', matchNumber: state.matchCounter, team1Players: [candidates[0].id], team2Players: [candidates[1].id] });
 }
 
-function generateSkillDoubles(players) {
+function genSkillDoubles(players) {
     if (players.length < 4) return;
-    
-    const sorted = [...players].sort((a, b) => a.skillLevel - b.skillLevel);
-    const selected = sorted.slice(0, 4);
-    
-    // Balance teams: pair high with low
-    const team1 = [selected[0].id, selected[3].id];
-    const team2 = [selected[1].id, selected[2].id];
-    
-    state.pendingMatches.push({
-        id: generateId(),
-        matchType: 'doubles',
-        team1Players: team1,
-        team2Players: team2
-    });
+    const sorted = [...players].sort((a, b) => a.skillLevel - b.skillLevel).slice(0, 4);
+    state.matchCounter++;
+    saveData(DB.matchCounter, state.matchCounter);
+    state.pendingMatches.push({ id: generateId(), matchType: 'doubles', matchNumber: state.matchCounter, team1Players: [sorted[0].id, sorted[3].id], team2Players: [sorted[1].id, sorted[2].id] });
 }
 
-// ========== MODAL FUNCTIONS ==========
-function showModal(modalId) {
+// ========== MODAL ==========
+function showModal(id) {
     document.getElementById('modal-overlay').classList.remove('hidden');
-    document.getElementById(modalId).classList.remove('hidden');
+    document.getElementById(id).classList.remove('hidden');
 }
-
 function closeModal() {
     document.getElementById('modal-overlay').classList.add('hidden');
     document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
-    resetModalState();
+    state.editingPlayer = null; state.currentMatch = null; state.editingMatch = null;
+    state.selectedPlayers.clear(); state.selectedAvatar = null; state.keepCurrentAvatar = true;
 }
 
-function resetModalState() {
-    state.editingPlayer = null;
-    state.selectedPlayers.clear();
-    state.selectedSkill = 3;
-    state.selectedAvatar = null;
-    state.currentMatch = null;
-    state.selectedWinner = 1;
-}
-
-// ========== SESSION FUNCTIONS ==========
+// ========== SESSION ==========
 function showStartSession() {
-    if (state.players.length === 0) {
-        alert('Please add players first!');
-        return;
-    }
-    
-    document.getElementById('new-session-name').value = '';
+    if (!state.players.length) { showToast('Add players first!', 'error'); return; }
+    const nameInput = document.getElementById('new-session-name');
+    nameInput.value = generateSessionName();
+    nameInput.focus(); nameInput.select();
     state.selectedPlayers.clear();
     renderSessionPlayerList();
     showModal('start-session-modal');
 }
 
 function renderSessionPlayerList() {
-    const list = document.getElementById('session-player-list');
-    const count = document.getElementById('selected-count');
-    count.textContent = state.selectedPlayers.size;
-    
-    if (state.players.length === 0) {
-        list.innerHTML = '<p class="text-muted" style="padding: 1rem;">No players available</p>';
-        return;
-    }
-    
-    list.innerHTML = state.players.map(player => {
-        const isSelected = state.selectedPlayers.has(player.id);
-        const initial = player.name.charAt(0).toUpperCase();
-        const avatarContent = player.avatar 
-            ? `<img src="${player.avatar}" alt="${player.name}">`
-            : initial;
-        
-        return `
-            <div class="player-select-item ${isSelected ? 'selected' : ''}" 
-                 onclick="togglePlayerSelection('${player.id}')">
-                <div class="avatar">${avatarContent}</div>
-                <span style="flex: 1;">${player.name}</span>
-                <span>${isSelected ? '✓' : '○'}</span>
-            </div>
-        `;
+    document.getElementById('selected-count').textContent = state.selectedPlayers.size;
+    document.getElementById('session-player-list').innerHTML = state.players.map(p => {
+        const sel = state.selectedPlayers.has(p.id);
+        const av = p.avatar ? `<img src="${p.avatar}" alt="${p.name}">` : p.name.charAt(0).toUpperCase();
+        return `<div class="player-select-item ${sel ? 'selected' : ''}" onclick="togglePlayerSelection('${p.id}')">
+            <div class="avatar">${av}</div><span style="flex:1">${p.name}</span>
+            <span class="check-icon">${sel ? '✓' : '○'}</span></div>`;
     }).join('');
 }
 
-function togglePlayerSelection(playerId) {
-    if (state.selectedPlayers.has(playerId)) {
-        state.selectedPlayers.delete(playerId);
-    } else {
-        state.selectedPlayers.add(playerId);
-    }
+function togglePlayerSelection(id) {
+    state.selectedPlayers.has(id) ? state.selectedPlayers.delete(id) : state.selectedPlayers.add(id);
     renderSessionPlayerList();
 }
 
 function startSession() {
-    const name = document.getElementById('new-session-name').value.trim();
-    
-    if (!name) {
-        alert('Please enter a session name');
-        return;
-    }
-    
-    if (state.selectedPlayers.size < 2) {
-        alert('Please select at least 2 players');
-        return;
-    }
-    
-    // End current session if exists
+    const name = document.getElementById('new-session-name').value.trim() || generateSessionName();
+    if (state.selectedPlayers.size < 2) { showToast('Select at least 2 players', 'error'); return; }
     if (state.currentSession) {
         state.currentSession.isActive = false;
         state.currentSession.endDate = new Date().toISOString();
-        const index = state.sessions.findIndex(s => s.id === state.currentSession.id);
-        if (index >= 0) state.sessions[index] = state.currentSession;
+        const i = state.sessions.findIndex(s => s.id === state.currentSession.id);
+        if (i >= 0) state.sessions[i] = state.currentSession;
     }
-    
-    // Create new session
-    const newSession = {
-        id: generateId(),
-        name,
-        startDate: new Date().toISOString(),
-        endDate: null,
-        playerIds: Array.from(state.selectedPlayers),
-        matchIds: [],
-        isActive: true
-    };
-    
-    state.sessions.push(newSession);
-    state.currentSession = newSession;
+    const session = { id: generateId(), name, startDate: new Date().toISOString(), endDate: null, playerIds: Array.from(state.selectedPlayers), matchIds: [], isActive: true };
+    state.sessions.push(session);
+    state.currentSession = session;
     state.pendingMatches = [];
-    
+    state.matchCounter = 0;
+    saveData(DB.matchCounter, 0);
     saveData(DB.sessions, state.sessions);
     saveData(DB.currentSession, state.currentSession);
-    
-    closeModal();
-    render();
+    closeModal(); render();
+    showToast(`"${name}" started! 🏸`);
 }
 
 function endSession() {
-    if (!confirm('End the current session? All match data will be saved.')) return;
-    
+    if (!confirm('End session? All data will be saved.')) return;
     state.currentSession.isActive = false;
     state.currentSession.endDate = new Date().toISOString();
-    
-    const index = state.sessions.findIndex(s => s.id === state.currentSession.id);
-    if (index >= 0) state.sessions[index] = state.currentSession;
-    
-    state.currentSession = null;
-    state.pendingMatches = [];
-    
-    saveData(DB.sessions, state.sessions);
-    saveData(DB.currentSession, null);
-    
-    render();
+    const i = state.sessions.findIndex(s => s.id === state.currentSession.id);
+    if (i >= 0) state.sessions[i] = state.currentSession;
+    state.currentSession = null; state.pendingMatches = [];
+    saveData(DB.sessions, state.sessions); saveData(DB.currentSession, null);
+    showToast('Session ended! Great games 🏸'); render();
 }
 
-// ========== PLAYER FUNCTIONS ==========
+// ========== PLAYERS ==========
 function showAddPlayer() {
     state.editingPlayer = null;
     document.getElementById('player-modal-title').textContent = 'Add Player';
     document.getElementById('player-name').value = '';
-    state.selectedSkill = 3;
-    state.selectedAvatar = null;
-    
-    // Reset avatar preview
-    document.getElementById('player-avatar-preview').innerHTML = 
-        '<span class="avatar-placeholder">📷</span>';
-    
-    // Reset skill buttons
-    document.querySelectorAll('.skill-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.level === '3');
-    });
-    
+    document.getElementById('player-avatar-preview').innerHTML = '<span class="avatar-placeholder">📷</span>';
+    document.getElementById('delete-player-btn').classList.add('hidden');
+    state.selectedSkill = 3; state.selectedAvatar = null; state.keepCurrentAvatar = false;
+    document.querySelectorAll('.skill-btn').forEach(b => b.classList.toggle('active', b.dataset.level === '3'));
     showModal('player-modal');
 }
 
 function editPlayer(playerId) {
-    const player = state.players.find(p => p.id === playerId);
-    if (!player) return;
-    
-    state.editingPlayer = player;
+    const p = state.players.find(p => p.id === playerId);
+    if (!p) return;
+    state.editingPlayer = p;
     document.getElementById('player-modal-title').textContent = 'Edit Player';
-    document.getElementById('player-name').value = player.name;
-    state.selectedSkill = player.skillLevel || 3;
-    state.selectedAvatar = player.avatar || null;
-    
-    // Update avatar preview
-    const preview = document.getElementById('player-avatar-preview');
-    if (player.avatar) {
-        preview.innerHTML = `<img src="${player.avatar}" alt="${player.name}">`;
-    } else {
-        preview.innerHTML = `<span style="font-size: 2rem;">${player.name.charAt(0).toUpperCase()}</span>`;
-    }
-    
-    // Update skill buttons
-    document.querySelectorAll('.skill-btn').forEach(btn => {
-        btn.classList.toggle('active', parseInt(btn.dataset.level) === player.skillLevel);
-    });
-    
+    document.getElementById('player-name').value = p.name;
+    state.selectedSkill = p.skillLevel || 3; state.selectedAvatar = null; state.keepCurrentAvatar = true;
+    document.getElementById('player-avatar-preview').innerHTML = p.avatar
+        ? `<img src="${p.avatar}" alt="${p.name}">` : `<span style="font-size:2rem;">${p.name.charAt(0).toUpperCase()}</span>`;
+    document.getElementById('delete-player-btn').classList.remove('hidden');
+    document.querySelectorAll('.skill-btn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.level) === p.skillLevel));
     showModal('player-modal');
 }
 
 function selectSkill(level) {
     state.selectedSkill = level;
-    document.querySelectorAll('.skill-btn').forEach(btn => {
-        btn.classList.toggle('active', parseInt(btn.dataset.level) === level);
-    });
+    document.querySelectorAll('.skill-btn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.level) === level));
 }
 
 function handleAvatarSelect(event) {
     const file = event.target.files[0];
     if (!file) return;
-    
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        state.selectedAvatar = e.target.result;
-        document.getElementById('player-avatar-preview').innerHTML = 
-            `<img src="${e.target.result}" alt="Avatar">`;
+    new FileReader().addEventListener('load', e => {
+        state.selectedAvatar = e.target.result; state.keepCurrentAvatar = false;
+        document.getElementById('player-avatar-preview').innerHTML = `<img src="${e.target.result}" alt="Avatar">`;
+    }, { once: true });
+    const fr = new FileReader();
+    fr.onload = e => {
+        state.selectedAvatar = e.target.result; state.keepCurrentAvatar = false;
+        document.getElementById('player-avatar-preview').innerHTML = `<img src="${e.target.result}" alt="Avatar">`;
     };
-    reader.readAsDataURL(file);
+    fr.readAsDataURL(file);
 }
 
 function savePlayer() {
     const name = document.getElementById('player-name').value.trim();
-    
-    if (!name) {
-        alert('Please enter a player name');
-        return;
-    }
-    
+    if (!name) { showToast('Enter a player name', 'error'); return; }
     if (state.editingPlayer) {
-        // Update existing player
         state.editingPlayer.name = name;
         state.editingPlayer.skillLevel = state.selectedSkill;
-        if (state.selectedAvatar !== null) {
-            state.editingPlayer.avatar = state.selectedAvatar;
-        }
+        if (!state.keepCurrentAvatar) state.editingPlayer.avatar = state.selectedAvatar;
+        saveData(DB.players, state.players);
+        showToast(`${name} updated!`);
     } else {
-        // Add new player
-        const newPlayer = {
-            id: generateId(),
-            name,
-            avatar: state.selectedAvatar,
-            skillLevel: state.selectedSkill,
-            createdAt: new Date().toISOString()
-        };
-        state.players.push(newPlayer);
+        state.players.push({ id: generateId(), name, avatar: state.selectedAvatar, skillLevel: state.selectedSkill, createdAt: new Date().toISOString() });
+        saveData(DB.players, state.players);
+        showToast(`${name} added! 👋`);
     }
-    
-    saveData(DB.players, state.players);
-    closeModal();
+    closeModal(); render();
+}
+
+// ========== FEATURE 1: DELETE PLAYER + UNDO ==========
+function deletePlayer(playerId) {
+    const player = state.players.find(p => p.id === playerId);
+    if (!player) return;
+    const snapshot = { type: 'deletePlayer', player: JSON.parse(JSON.stringify(player)) };
+    state.players = state.players.filter(p => p.id !== playerId);
+    state.sessions = state.sessions.map(s => ({ ...s, playerIds: s.playerIds.filter(id => id !== playerId) }));
+    if (state.currentSession) state.currentSession.playerIds = state.currentSession.playerIds.filter(id => id !== playerId);
+    state.pendingMatches = state.pendingMatches.filter(m => !m.team1Players.includes(playerId) && !m.team2Players.includes(playerId));
+    saveData(DB.players, state.players); saveData(DB.sessions, state.sessions); saveData(DB.currentSession, state.currentSession);
+    closeModal(); render();
+    showUndoToast(`${player.name} deleted`, snapshot);
+}
+
+function deletePlayerFromModal() {
+    if (!state.editingPlayer) return;
+    if (!confirm(`Delete ${state.editingPlayer.name}? Their match history will remain.`)) return;
+    deletePlayer(state.editingPlayer.id);
+}
+
+// ========== FEATURE 2: DELETE SESSION + UNDO ==========
+function deleteSession(sessionId) {
+    const session = state.sessions.find(s => s.id === sessionId);
+    if (!session) return;
+    const sessionMatches = state.matches.filter(m => session.matchIds.includes(m.id));
+    const msg = sessionMatches.length
+        ? `Delete "${session.name}"? This removes ${sessionMatches.length} match(es) and recalculates rankings.`
+        : `Delete "${session.name}"?`;
+    if (!confirm(msg)) return;
+    const snapshot = { type: 'deleteSession', session: JSON.parse(JSON.stringify(session)), matches: sessionMatches.map(m => JSON.parse(JSON.stringify(m))) };
+    state.matches = state.matches.filter(m => !session.matchIds.includes(m.id));
+    state.sessions = state.sessions.filter(s => s.id !== sessionId);
+    if (state.currentSession && state.currentSession.id === sessionId) {
+        state.currentSession = null; state.pendingMatches = [];
+        saveData(DB.currentSession, null);
+    }
+    saveData(DB.matches, state.matches); saveData(DB.sessions, state.sessions);
     render();
+    showUndoToast(`"${session.name}" deleted`, snapshot);
+}
+
+// ========== FEATURE 2: DELETE MATCH + UNDO ==========
+function deleteMatch(matchId) {
+    const match = state.matches.find(m => m.id === matchId);
+    if (!match) return;
+    const t1 = match.team1Players.map(id => state.players.find(p => p.id === id)?.name || '?').join(' & ');
+    const t2 = match.team2Players.map(id => state.players.find(p => p.id === id)?.name || '?').join(' & ');
+    if (!confirm(`Delete: ${t1} vs ${t2}?\nRankings will be recalculated.`)) return;
+    const ownerSession = state.sessions.find(s => s.matchIds.includes(matchId));
+    const snapshot = { type: 'deleteMatch', match: JSON.parse(JSON.stringify(match)), sessionId: ownerSession?.id };
+    state.matches = state.matches.filter(m => m.id !== matchId);
+    state.sessions = state.sessions.map(s => ({ ...s, matchIds: s.matchIds.filter(id => id !== matchId) }));
+    if (state.currentSession) {
+        state.currentSession.matchIds = state.currentSession.matchIds.filter(id => id !== matchId);
+        saveData(DB.currentSession, state.currentSession);
+    }
+    saveData(DB.matches, state.matches); saveData(DB.sessions, state.sessions);
+    render();
+    showUndoToast('Match deleted', snapshot);
+}
+
+// ========== FEATURE 5: EDIT RECORDED MATCH ==========
+function showEditMatch(matchId) {
+    const match = state.matches.find(m => m.id === matchId);
+    if (!match) return;
+    state.editingMatch = match;
+    state.selectedWinner = match.winnerTeam || 1;
+    const t1 = match.team1Players.map(id => state.players.find(p => p.id === id)?.name || '?').join(' & ');
+    const t2 = match.team2Players.map(id => state.players.find(p => p.id === id)?.name || '?').join(' & ');
+    document.getElementById('edit-match-details').innerHTML = `
+        <div style="text-align:center;margin-bottom:.75rem;">
+            <span class="match-type-badge match-type-${match.matchType}">${match.matchType === 'singles' ? '⚡ Singles' : '👥 Doubles'}</span>
+            ${match.matchNumber ? `<span class="text-muted" style="margin-left:.5rem;font-size:.85rem;">Match #${match.matchNumber}</span>` : ''}
+        </div>
+        <div class="winner-selection">
+            <div class="winner-btn ${match.winnerTeam === 1 ? 'selected' : ''}" onclick="selectEditWinner(1)" id="edit-winner-btn-1">
+                <h4>Team 1</h4><p class="team-names">${t1}</p>
+                <p class="winner-label">${match.winnerTeam === 1 ? '🏆 Winner' : '○ Select'}</p>
+            </div>
+            <div class="winner-btn ${match.winnerTeam === 2 ? 'selected' : ''}" onclick="selectEditWinner(2)" id="edit-winner-btn-2">
+                <h4>Team 2</h4><p class="team-names">${t2}</p>
+                <p class="winner-label">${match.winnerTeam === 2 ? '🏆 Winner' : '○ Select'}</p>
+            </div>
+        </div>`;
+    const hasScores = match.team1Score !== undefined;
+    document.getElementById('edit-add-scores').checked = hasScores;
+    document.getElementById('edit-team1-score').value = hasScores ? match.team1Score : '';
+    document.getElementById('edit-team2-score').value = hasScores ? match.team2Score : '';
+    document.getElementById('edit-score-entry').classList.toggle('hidden', !hasScores);
+    showModal('edit-match-modal');
+}
+
+function selectEditWinner(team) {
+    state.selectedWinner = team;
+    [1, 2].forEach(t => {
+        document.getElementById(`edit-winner-btn-${t}`).classList.toggle('selected', t === team);
+        document.getElementById(`edit-winner-btn-${t}`).querySelector('.winner-label').textContent = t === team ? '🏆 Winner' : '○ Select';
+    });
+}
+
+function toggleEditScoreEntry() {
+    document.getElementById('edit-score-entry').classList.toggle('hidden', !document.getElementById('edit-add-scores').checked);
+}
+
+function saveEditMatch() {
+    if (!state.editingMatch) return;
+    const idx = state.matches.findIndex(m => m.id === state.editingMatch.id);
+    if (idx < 0) return;
+    state.matches[idx].winnerTeam = state.selectedWinner;
+    if (document.getElementById('edit-add-scores').checked) {
+        const s1 = parseInt(document.getElementById('edit-team1-score').value);
+        const s2 = parseInt(document.getElementById('edit-team2-score').value);
+        if (!isNaN(s1) && !isNaN(s2)) { state.matches[idx].team1Score = s1; state.matches[idx].team2Score = s2; }
+    } else { delete state.matches[idx].team1Score; delete state.matches[idx].team2Score; }
+    saveData(DB.matches, state.matches);
+    closeModal(); render();
+    showToast('Match updated! ✅');
 }
 
 // ========== MATCH GENERATOR ==========
 function showMatchGenerator() {
-    if (!state.currentSession) return;
-    
-    state.matchType = 'singles';
-    state.matchCount = 1;
-    state.useSkillMatching = false;
-    
+    state.matchType = 'singles'; state.matchCount = 1;
     document.getElementById('match-count').textContent = '1';
     document.getElementById('skill-matching').checked = false;
-    
-    // Reset match type buttons
-    document.querySelectorAll('[data-type]').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.type === 'singles');
-    });
-    
+    document.querySelectorAll('[data-type]').forEach(b => b.classList.toggle('active', b.dataset.type === 'singles'));
     showModal('match-generator-modal');
 }
-
 function selectMatchType(type) {
     state.matchType = type;
-    document.querySelectorAll('[data-type]').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.type === type);
-    });
+    document.querySelectorAll('[data-type]').forEach(b => b.classList.toggle('active', b.dataset.type === type));
 }
-
 function adjustMatchCount(delta) {
     state.matchCount = Math.max(1, Math.min(10, state.matchCount + delta));
     document.getElementById('match-count').textContent = state.matchCount;
 }
-
 function generateMatches() {
-    state.useSkillMatching = document.getElementById('skill-matching').checked;
-    
-    if (state.useSkillMatching) {
-        generateMatchesSkillBased(state.matchType, state.matchCount);
-    } else {
-        generateMatchesEqualRotation(state.matchType, state.matchCount);
-    }
-    
-    closeModal();
-    render();
+    const before = state.pendingMatches.length;
+    document.getElementById('skill-matching').checked
+        ? generateMatchesSkillBased(state.matchType, state.matchCount)
+        : generateMatchesEqualRotation(state.matchType, state.matchCount);
+    const added = state.pendingMatches.length - before;
+    closeModal(); render();
+    if (added > 0) showToast(`${added} match${added !== 1 ? 'es' : ''} added! 🏸`);
 }
 
 // ========== RECORD MATCH ==========
 function showRecordMatch(matchId) {
     const match = state.pendingMatches.find(m => m.id === matchId);
     if (!match) return;
-    
-    state.currentMatch = match;
-    state.selectedWinner = 1;
-    
-    const details = document.getElementById('match-details');
-    details.innerHTML = `
-        <div style="text-align: center; margin-bottom: 1rem;">
-            <span class="match-type-badge match-type-${match.matchType}">
-                ${match.matchType.charAt(0).toUpperCase() + match.matchType.slice(1)}
-            </span>
-        </div>
-        <div class="match-teams" style="margin-bottom: 1rem;">
-            <div class="match-team">
-                ${match.team1Players.map(id => renderPlayerBadge(id)).join('')}
-            </div>
-            <div class="match-vs">VS</div>
-            <div class="match-team">
-                ${match.team2Players.map(id => renderPlayerBadge(id)).join('')}
-            </div>
+    state.currentMatch = match; state.selectedWinner = 1;
+    const t1 = match.team1Players.map(id => state.players.find(p => p.id === id)?.name || '?').join(' & ');
+    const t2 = match.team2Players.map(id => state.players.find(p => p.id === id)?.name || '?').join(' & ');
+    document.getElementById('match-details').innerHTML = `
+        <div style="text-align:center;margin-bottom:.75rem;">
+            <span class="match-type-badge match-type-${match.matchType}">${match.matchType === 'singles' ? '⚡ Singles' : '👥 Doubles'}</span>
+            <span style="margin-left:.5rem;font-weight:600;color:#6B7280;font-size:.9rem;">Match #${match.matchNumber}</span>
         </div>
         <div class="winner-selection">
             <div class="winner-btn selected" onclick="selectWinner(1)" id="winner-btn-1">
-                <h4>Team 1</h4>
-                <p>✓ Winner</p>
+                <h4>Team 1</h4><p class="team-names">${t1}</p><p class="winner-label">🏆 Winner</p>
             </div>
             <div class="winner-btn" onclick="selectWinner(2)" id="winner-btn-2">
-                <h4>Team 2</h4>
-                <p>○ Select</p>
+                <h4>Team 2</h4><p class="team-names">${t2}</p><p class="winner-label">○ Select</p>
             </div>
-        </div>
-    `;
-    
+        </div>`;
     document.getElementById('add-scores').checked = false;
     document.getElementById('score-entry').classList.add('hidden');
     document.getElementById('team1-score').value = '';
     document.getElementById('team2-score').value = '';
-    
     showModal('record-match-modal');
 }
 
 function selectWinner(team) {
     state.selectedWinner = team;
-    document.getElementById('winner-btn-1').classList.toggle('selected', team === 1);
-    document.getElementById('winner-btn-2').classList.toggle('selected', team === 2);
-    document.getElementById('winner-btn-1').querySelector('p').textContent = team === 1 ? '✓ Winner' : '○ Select';
-    document.getElementById('winner-btn-2').querySelector('p').textContent = team === 2 ? '✓ Winner' : '○ Select';
+    [1, 2].forEach(t => {
+        document.getElementById(`winner-btn-${t}`).classList.toggle('selected', t === team);
+        document.getElementById(`winner-btn-${t}`).querySelector('.winner-label').textContent = t === team ? '🏆 Winner' : '○ Select';
+    });
 }
 
 function toggleScoreEntry() {
-    const checked = document.getElementById('add-scores').checked;
-    document.getElementById('score-entry').classList.toggle('hidden', !checked);
+    document.getElementById('score-entry').classList.toggle('hidden', !document.getElementById('add-scores').checked);
 }
 
 function recordMatch() {
     if (!state.currentMatch) return;
-    
     const match = {
-        id: generateId(),
-        matchType: state.currentMatch.matchType,
-        date: new Date().toISOString(),
-        team1Players: state.currentMatch.team1Players,
-        team2Players: state.currentMatch.team2Players,
+        id: generateId(), matchType: state.currentMatch.matchType,
+        matchNumber: state.currentMatch.matchNumber, date: new Date().toISOString(),
+        team1Players: state.currentMatch.team1Players, team2Players: state.currentMatch.team2Players,
         winnerTeam: state.selectedWinner
     };
-    
-    // Add scores if provided
     if (document.getElementById('add-scores').checked) {
-        const team1Score = parseInt(document.getElementById('team1-score').value);
-        const team2Score = parseInt(document.getElementById('team2-score').value);
-        
-        if (!isNaN(team1Score) && !isNaN(team2Score)) {
-            match.team1Score = team1Score;
-            match.team2Score = team2Score;
-        }
+        const s1 = parseInt(document.getElementById('team1-score').value);
+        const s2 = parseInt(document.getElementById('team2-score').value);
+        if (!isNaN(s1) && !isNaN(s2)) { match.team1Score = s1; match.team2Score = s2; }
     }
-    
-    // Add to matches
     state.matches.push(match);
-    
-    // Add to current session
     if (state.currentSession) {
         state.currentSession.matchIds.push(match.id);
-        const index = state.sessions.findIndex(s => s.id === state.currentSession.id);
-        if (index >= 0) state.sessions[index] = state.currentSession;
-        saveData(DB.sessions, state.sessions);
-        saveData(DB.currentSession, state.currentSession);
+        const i = state.sessions.findIndex(s => s.id === state.currentSession.id);
+        if (i >= 0) state.sessions[i] = state.currentSession;
+        saveData(DB.sessions, state.sessions); saveData(DB.currentSession, state.currentSession);
     }
-    
-    // Remove from pending
     state.pendingMatches = state.pendingMatches.filter(m => m.id !== state.currentMatch.id);
-    
     saveData(DB.matches, state.matches);
-    
-    closeModal();
-    render();
+    closeModal(); render();
+    showToast('Match recorded! ✅');
 }
 
 function skipMatch() {
     if (!state.currentMatch) return;
-    
     if (confirm('Skip this match?')) {
         state.pendingMatches = state.pendingMatches.filter(m => m.id !== state.currentMatch.id);
-        closeModal();
-        render();
+        closeModal(); render();
     }
+}
+
+// ========== UNDO SYSTEM ==========
+function showUndoToast(message, snapshot) {
+    if (state.undoTimer) clearTimeout(state.undoTimer);
+    state.undoStack = snapshot;
+    document.getElementById('undo-toast-msg').textContent = message;
+    const toast = document.getElementById('undo-toast');
+    toast.classList.remove('hidden'); toast.classList.add('show');
+    state.undoTimer = setTimeout(dismissUndoToast, 6000);
+}
+
+function dismissUndoToast() {
+    const t = document.getElementById('undo-toast');
+    t.classList.remove('show'); t.classList.add('hidden');
+    state.undoStack = null;
+}
+
+function undoAction() {
+    if (!state.undoStack) return;
+    const { type } = state.undoStack;
+    if (type === 'deletePlayer') {
+        state.players.push(state.undoStack.player);
+        saveData(DB.players, state.players);
+        showToast(`${state.undoStack.player.name} restored! 👋`);
+    } else if (type === 'deleteSession') {
+        state.matches.push(...state.undoStack.matches);
+        state.sessions.push(state.undoStack.session);
+        if (state.undoStack.session.isActive) { state.currentSession = state.undoStack.session; saveData(DB.currentSession, state.currentSession); }
+        saveData(DB.matches, state.matches); saveData(DB.sessions, state.sessions);
+        showToast(`"${state.undoStack.session.name}" restored!`);
+    } else if (type === 'deleteMatch') {
+        state.matches.push(state.undoStack.match);
+        if (state.undoStack.sessionId) {
+            state.sessions = state.sessions.map(s => s.id === state.undoStack.sessionId ? { ...s, matchIds: [...s.matchIds, state.undoStack.match.id] } : s);
+            if (state.currentSession?.id === state.undoStack.sessionId) {
+                state.currentSession.matchIds.push(state.undoStack.match.id); saveData(DB.currentSession, state.currentSession);
+            }
+        }
+        saveData(DB.matches, state.matches); saveData(DB.sessions, state.sessions);
+        showToast('Match restored!');
+    }
+    dismissUndoToast(); render();
+}
+
+// ========== TOAST ==========
+function showToast(msg, type = 'success') {
+    if (state.toastTimer) clearTimeout(state.toastTimer);
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.className = `toast show ${type}`;
+    state.toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
 }
 
 // ========== VIEW SWITCHING ==========
 function switchRankingView(view) {
     state.rankingView = view;
-    document.querySelectorAll('#rankings-tab .seg-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.view === view);
-    });
+    document.querySelectorAll('#rankings-tab .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.view === view));
     renderRankings();
 }
-
 function switchHistoryView(view) {
     state.historyView = view;
-    document.querySelectorAll('#history-tab .seg-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.view === view);
-    });
+    document.querySelectorAll('#history-tab .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.view === view));
     renderHistory();
 }
-

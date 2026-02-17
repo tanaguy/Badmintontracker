@@ -12,251 +12,261 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <!-- Main App Container -->
-    <div id="app" class="app-container">
-        <!-- Header -->
-        <header class="app-header">
-            <h1>🏸 Badminton Tracker</h1>
-        </header>
+<div id="app" class="app-container">
 
-        <!-- Tab Navigation -->
-        <nav class="tab-nav">
-            <button class="tab-btn active" data-tab="session">
-                <span class="tab-icon">▶️</span>
-                <span>Session</span>
-            </button>
-            <button class="tab-btn" data-tab="players">
-                <span class="tab-icon">👥</span>
-                <span>Players</span>
-            </button>
-            <button class="tab-btn" data-tab="rankings">
-                <span class="tab-icon">📊</span>
-                <span>Rankings</span>
-            </button>
-            <button class="tab-btn" data-tab="history">
-                <span class="tab-icon">🕐</span>
-                <span>History</span>
-            </button>
-        </nav>
+    <!-- Header -->
+    <header class="app-header">
+        <h1>🏸 Badminton Tracker</h1>
+    </header>
 
-        <!-- Tab Content -->
-        <main class="tab-content">
-            <!-- Session Tab -->
-            <div id="session-tab" class="tab-pane active">
-                <div id="no-session-view" class="empty-state">
-                    <div class="empty-icon">🏸</div>
-                    <h2>No Active Session</h2>
-                    <p>Start a new session to begin tracking matches</p>
-                    <button class="btn btn-primary" onclick="showStartSession()">Start New Session</button>
+    <!-- Tab Navigation -->
+    <nav class="tab-nav">
+        <button class="tab-btn active" data-tab="session"><span class="tab-icon">▶️</span><span>Session</span></button>
+        <button class="tab-btn" data-tab="players"><span class="tab-icon">👥</span><span>Players</span></button>
+        <button class="tab-btn" data-tab="rankings"><span class="tab-icon">📊</span><span>Rankings</span></button>
+        <button class="tab-btn" data-tab="history"><span class="tab-icon">🕐</span><span>History</span></button>
+    </nav>
+
+    <!-- Tab Content -->
+    <main class="tab-content">
+
+        <!-- SESSION TAB -->
+        <div id="session-tab" class="tab-pane active">
+            <div id="no-session-view" class="empty-state">
+                <div class="empty-icon">🏸</div>
+                <h2>No Active Session</h2>
+                <p>Start a new session to begin tracking matches</p>
+                <button class="btn btn-primary" onclick="showStartSession()">Start New Session</button>
+            </div>
+            <div id="active-session-view" class="hidden">
+                <div class="session-header">
+                    <div class="session-info">
+                        <h2 id="session-name">Session Name</h2>
+                        <p id="session-player-count">0 Players</p>
+                    </div>
+                    <button class="btn btn-danger btn-sm" onclick="endSession()">End Session</button>
                 </div>
+                <button class="btn btn-success btn-large" onclick="showMatchGenerator()">➕ Generate Matches</button>
+                <div id="match-queue" class="match-queue"></div>
+            </div>
+        </div>
 
-                <div id="active-session-view" class="hidden">
-                    <div class="session-header">
-                        <div class="session-info">
-                            <h2 id="session-name">Session Name</h2>
-                            <p id="session-player-count">0 Players</p>
-                        </div>
-                        <button class="btn btn-danger" onclick="endSession()">End Session</button>
-                    </div>
+        <!-- PLAYERS TAB -->
+        <div id="players-tab" class="tab-pane">
+            <div class="tab-header">
+                <h2>Players</h2>
+                <button class="btn btn-primary btn-sm" onclick="showAddPlayer()">➕ Add</button>
+            </div>
+            <div id="players-list" class="list-container"></div>
+        </div>
 
-                    <button class="btn btn-success btn-large" onclick="showMatchGenerator()">
-                        ➕ Generate Matches
-                    </button>
-
-                    <div id="match-queue" class="match-queue">
-                        <div class="empty-state-small">
-                            <p>No matches in queue</p>
-                            <p class="text-muted">Tap 'Generate Matches' to create matches</p>
-                        </div>
-                    </div>
+        <!-- RANKINGS TAB -->
+        <div id="rankings-tab" class="tab-pane">
+            <div class="tab-header">
+                <h2>Rankings</h2>
+                <div class="segmented-control">
+                    <button class="seg-btn active" data-view="overall" onclick="switchRankingView('overall')">Overall</button>
+                    <button class="seg-btn" data-view="session" onclick="switchRankingView('session')">Session</button>
                 </div>
             </div>
+            <div id="rankings-list" class="list-container"></div>
+        </div>
 
-            <!-- Players Tab -->
-            <div id="players-tab" class="tab-pane">
-                <div class="tab-header">
-                    <h2>Players</h2>
-                    <button class="btn btn-primary btn-sm" onclick="showAddPlayer()">➕ Add</button>
-                </div>
-                <div id="players-list" class="list-container">
-                    <div class="empty-state">
-                        <div class="empty-icon">👥</div>
-                        <h3>No Players</h3>
-                        <p>Add players to start tracking matches</p>
-                    </div>
+        <!-- HISTORY TAB -->
+        <div id="history-tab" class="tab-pane">
+            <div class="tab-header">
+                <h2>History</h2>
+                <div class="segmented-control">
+                    <button class="seg-btn active" data-view="sessions" onclick="switchHistoryView('sessions')">Sessions</button>
+                    <button class="seg-btn" data-view="matches" onclick="switchHistoryView('matches')">Matches</button>
                 </div>
             </div>
+            <div id="history-list" class="list-container"></div>
+        </div>
 
-            <!-- Rankings Tab -->
-            <div id="rankings-tab" class="tab-pane">
-                <div class="tab-header">
-                    <h2>Rankings</h2>
-                    <div class="segmented-control">
-                        <button class="seg-btn active" data-view="overall" onclick="switchRankingView('overall')">Overall</button>
-                        <button class="seg-btn" data-view="session" onclick="switchRankingView('session')">Session</button>
-                    </div>
-                </div>
-                <div id="rankings-list" class="list-container">
-                    <div class="empty-state">
-                        <div class="empty-icon">📊</div>
-                        <h3>No Rankings Yet</h3>
-                        <p>Play some matches to see rankings</p>
-                    </div>
-                </div>
-            </div>
+    </main>
+</div>
 
-            <!-- History Tab -->
-            <div id="history-tab" class="tab-pane">
-                <div class="tab-header">
-                    <h2>History</h2>
-                    <div class="segmented-control">
-                        <button class="seg-btn active" data-view="sessions" onclick="switchHistoryView('sessions')">Sessions</button>
-                        <button class="seg-btn" data-view="matches" onclick="switchHistoryView('matches')">Matches</button>
-                    </div>
-                </div>
-                <div id="history-list" class="list-container">
-                    <div class="empty-state">
-                        <div class="empty-icon">🕐</div>
-                        <h3>No History Yet</h3>
-                        <p>Start playing to see history</p>
-                    </div>
-                </div>
-            </div>
-        </main>
+<!-- MODAL OVERLAY -->
+<div id="modal-overlay" class="modal-overlay hidden" onclick="closeModal()"></div>
+
+<!-- START SESSION MODAL -->
+<div id="start-session-modal" class="modal hidden">
+    <div class="modal-header">
+        <h2>New Session</h2>
+        <button class="close-btn" onclick="closeModal()">✕</button>
     </div>
-
-    <!-- Modals -->
-    <div id="modal-overlay" class="modal-overlay hidden" onclick="closeModal()"></div>
-
-    <!-- Start Session Modal -->
-    <div id="start-session-modal" class="modal hidden">
-        <div class="modal-header">
-            <h2>New Session</h2>
-            <button class="close-btn" onclick="closeModal()">✕</button>
+    <div class="modal-body">
+        <div class="form-group">
+            <label>Session Name <span class="label-hint">(editable — auto-filled for you)</span></label>
+            <input type="text" id="new-session-name" class="input" placeholder="e.g., Friday Evening">
         </div>
-        <div class="modal-body">
-            <div class="form-group">
-                <label>Session Name</label>
-                <input type="text" id="new-session-name" class="input" placeholder="e.g., Monday Night Game">
-            </div>
-            <div class="form-group">
-                <label>Select Players (<span id="selected-count">0</span> selected)</label>
-                <div id="session-player-list" class="player-select-list"></div>
-            </div>
-        </div>
-        <div class="modal-footer">
-            <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-            <button class="btn btn-primary" onclick="startSession()">Start Session</button>
+        <div class="form-group">
+            <label>Select Players (<span id="selected-count">0</span> selected)</label>
+            <div id="session-player-list" class="player-select-list"></div>
         </div>
     </div>
+    <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="startSession()">Start Session</button>
+    </div>
+</div>
 
-    <!-- Add/Edit Player Modal -->
-    <div id="player-modal" class="modal hidden">
-        <div class="modal-header">
-            <h2 id="player-modal-title">Add Player</h2>
-            <button class="close-btn" onclick="closeModal()">✕</button>
-        </div>
-        <div class="modal-body">
-            <div class="form-group">
-                <label>Avatar</label>
-                <div class="avatar-picker">
-                    <div id="player-avatar-preview" class="avatar-large" onclick="document.getElementById('avatar-input').click()">
-                        <span class="avatar-placeholder">📷</span>
-                    </div>
-                    <input type="file" id="avatar-input" accept="image/*" class="hidden" onchange="handleAvatarSelect(event)">
+<!-- ADD / EDIT PLAYER MODAL -->
+<div id="player-modal" class="modal hidden">
+    <div class="modal-header">
+        <h2 id="player-modal-title">Add Player</h2>
+        <button class="close-btn" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+        <div class="form-group">
+            <label>Photo</label>
+            <div class="avatar-picker">
+                <div id="player-avatar-preview" class="avatar-large avatar-upload" onclick="document.getElementById('avatar-input').click()">
+                    <span class="avatar-placeholder">📷</span>
                 </div>
-            </div>
-            <div class="form-group">
-                <label>Player Name</label>
-                <input type="text" id="player-name" class="input" placeholder="Enter name">
-            </div>
-            <div class="form-group">
-                <label>Skill Level</label>
-                <div class="skill-selector">
-                    <button class="skill-btn" data-level="1" onclick="selectSkill(1)">Beginner</button>
-                    <button class="skill-btn" data-level="2" onclick="selectSkill(2)">Casual</button>
-                    <button class="skill-btn active" data-level="3" onclick="selectSkill(3)">Average</button>
-                    <button class="skill-btn" data-level="4" onclick="selectSkill(4)">Advanced</button>
-                    <button class="skill-btn" data-level="5" onclick="selectSkill(5)">Expert</button>
-                </div>
+                <p class="help-text">Tap to change photo</p>
+                <input type="file" id="avatar-input" accept="image/*" class="hidden" onchange="handleAvatarSelect(event)">
             </div>
         </div>
-        <div class="modal-footer">
+        <div class="form-group">
+            <label>Player Name</label>
+            <input type="text" id="player-name" class="input" placeholder="Enter name">
+        </div>
+        <div class="form-group">
+            <label>Skill Level</label>
+            <div class="skill-selector">
+                <button class="skill-btn" data-level="1" onclick="selectSkill(1)">Beginner</button>
+                <button class="skill-btn" data-level="2" onclick="selectSkill(2)">Casual</button>
+                <button class="skill-btn active" data-level="3" onclick="selectSkill(3)">Average</button>
+                <button class="skill-btn" data-level="4" onclick="selectSkill(4)">Advanced</button>
+                <button class="skill-btn" data-level="5" onclick="selectSkill(5)">Expert</button>
+            </div>
+        </div>
+    </div>
+    <div class="modal-footer modal-footer-split">
+        <button id="delete-player-btn" class="btn btn-danger hidden" onclick="deletePlayerFromModal()">🗑 Delete</button>
+        <div class="footer-right">
             <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
             <button class="btn btn-primary" onclick="savePlayer()">Save</button>
         </div>
     </div>
+</div>
 
-    <!-- Match Generator Modal -->
-    <div id="match-generator-modal" class="modal hidden">
-        <div class="modal-header">
-            <h2>Generate Matches</h2>
-            <button class="close-btn" onclick="closeModal()">✕</button>
-        </div>
-        <div class="modal-body">
-            <div class="form-group">
-                <label>Match Type</label>
-                <div class="segmented-control">
-                    <button class="seg-btn active" data-type="singles" onclick="selectMatchType('singles')">Singles</button>
-                    <button class="seg-btn" data-type="doubles" onclick="selectMatchType('doubles')">Doubles</button>
-                </div>
-            </div>
-            <div class="form-group">
-                <label>Number of Matches</label>
-                <div class="stepper">
-                    <button class="stepper-btn" onclick="adjustMatchCount(-1)">−</button>
-                    <span id="match-count">1</span>
-                    <button class="stepper-btn" onclick="adjustMatchCount(1)">+</button>
-                </div>
-            </div>
-            <div class="form-group">
-                <label>
-                    <input type="checkbox" id="skill-matching" class="checkbox">
-                    Use Skill-Based Matching
-                </label>
-                <p class="help-text">Match players with similar skill levels</p>
+<!-- MATCH GENERATOR MODAL -->
+<div id="match-generator-modal" class="modal hidden">
+    <div class="modal-header">
+        <h2>Generate Matches</h2>
+        <button class="close-btn" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+        <div class="form-group">
+            <label>Match Type</label>
+            <div class="segmented-control">
+                <button class="seg-btn active" data-type="singles" onclick="selectMatchType('singles')">⚡ Singles</button>
+                <button class="seg-btn" data-type="doubles" onclick="selectMatchType('doubles')">👥 Doubles</button>
             </div>
         </div>
-        <div class="modal-footer">
-            <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-            <button class="btn btn-success" onclick="generateMatches()">Generate</button>
+        <div class="form-group">
+            <label>Number of Matches</label>
+            <div class="stepper">
+                <button class="stepper-btn" onclick="adjustMatchCount(-1)">−</button>
+                <span id="match-count">1</span>
+                <button class="stepper-btn" onclick="adjustMatchCount(1)">+</button>
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="checkbox-label">
+                <input type="checkbox" id="skill-matching" class="checkbox">
+                <span>Skill-Based Matching</span>
+            </label>
+            <p class="help-text">Prioritises players of similar skill level</p>
         </div>
     </div>
+    <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-success" onclick="generateMatches()">Generate</button>
+    </div>
+</div>
 
-    <!-- Record Match Modal -->
-    <div id="record-match-modal" class="modal hidden">
-        <div class="modal-header">
-            <h2>Record Match</h2>
-            <button class="close-btn" onclick="closeModal()">✕</button>
+<!-- RECORD MATCH MODAL -->
+<div id="record-match-modal" class="modal hidden">
+    <div class="modal-header">
+        <h2>Record Match</h2>
+        <button class="close-btn" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+        <div id="match-details"></div>
+        <div class="form-group" style="margin-top:1rem;">
+            <label class="checkbox-label">
+                <input type="checkbox" id="add-scores" class="checkbox" onchange="toggleScoreEntry()">
+                <span>Add Scores</span>
+            </label>
         </div>
-        <div class="modal-body">
-            <div id="match-details" class="match-record-view"></div>
-            <div class="form-group">
-                <label>
-                    <input type="checkbox" id="add-scores" class="checkbox" onchange="toggleScoreEntry()">
-                    Add Scores
-                </label>
-            </div>
-            <div id="score-entry" class="score-entry hidden">
-                <div class="score-input-row">
-                    <div class="score-input-group">
-                        <label>Team 1 Score</label>
-                        <input type="number" id="team1-score" class="input text-center" placeholder="21">
-                    </div>
-                    <span class="score-separator">−</span>
-                    <div class="score-input-group">
-                        <label>Team 2 Score</label>
-                        <input type="number" id="team2-score" class="input text-center" placeholder="19">
-                    </div>
+        <div id="score-entry" class="score-entry hidden">
+            <div class="score-input-row">
+                <div class="score-input-group">
+                    <label>Team 1</label>
+                    <input type="number" id="team1-score" class="input text-center" placeholder="21" min="0">
+                </div>
+                <span class="score-separator">−</span>
+                <div class="score-input-group">
+                    <label>Team 2</label>
+                    <input type="number" id="team2-score" class="input text-center" placeholder="19" min="0">
                 </div>
             </div>
         </div>
-        <div class="modal-footer">
-            <button class="btn btn-danger" onclick="skipMatch()">Skip</button>
-            <button class="btn btn-success" onclick="recordMatch()">Record</button>
+    </div>
+    <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="skipMatch()">Skip</button>
+        <button class="btn btn-success" onclick="recordMatch()">Record ✅</button>
+    </div>
+</div>
+
+<!-- EDIT MATCH MODAL (Feature 5) -->
+<div id="edit-match-modal" class="modal hidden">
+    <div class="modal-header">
+        <h2>✏️ Edit Match Result</h2>
+        <button class="close-btn" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+        <div id="edit-match-details"></div>
+        <div class="form-group" style="margin-top:1rem;">
+            <label class="checkbox-label">
+                <input type="checkbox" id="edit-add-scores" class="checkbox" onchange="toggleEditScoreEntry()">
+                <span>Edit Scores</span>
+            </label>
+        </div>
+        <div id="edit-score-entry" class="score-entry hidden">
+            <div class="score-input-row">
+                <div class="score-input-group">
+                    <label>Team 1</label>
+                    <input type="number" id="edit-team1-score" class="input text-center" placeholder="21" min="0">
+                </div>
+                <span class="score-separator">−</span>
+                <div class="score-input-group">
+                    <label>Team 2</label>
+                    <input type="number" id="edit-team2-score" class="input text-center" placeholder="19" min="0">
+                </div>
+            </div>
         </div>
     </div>
+    <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveEditMatch()">Save Changes</button>
+    </div>
+</div>
 
-    <script src="app.js"></script>
+<!-- UNDO TOAST (Feature 1 & 2) -->
+<div id="undo-toast" class="undo-toast hidden">
+    <span id="undo-toast-msg">Item deleted</span>
+    <button onclick="undoAction()" class="undo-btn">Undo</button>
+    <button onclick="dismissUndoToast()" class="undo-dismiss">✕</button>
+</div>
+
+<!-- REGULAR TOAST -->
+<div id="toast" class="toast"></div>
+
+<script src="app.js"></script>
 </body>
 </html>
