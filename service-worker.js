@@ -1,65 +1,48 @@
-// Service Worker for Badminton Tracker PWA
-const CACHE_NAME = 'badminton-tracker-v1';
-const urlsToCache = [
-  '/',
-  '/index.html',
-  '/styles.css',
-  '/app.js',
-  '/manifest.json'
-];
+// Badminton Tracker - Service Worker
+// Version: 20260217_01
+// Strategy: Cache-bust on every deploy, network-always for app files
 
-// Install event - cache files
+const CACHE_VERSION = '20260217_01';
+const CACHE_NAME = 'badminton-20260217_01';
+
+// Only cache these for offline fallback - NOT the main app files
+const OFFLINE_FALLBACK = './index.html';
+
+// On install: claim immediately, wipe ALL old caches
 self.addEventListener('install', event => {
+  console.log('[SW] Installing version', CACHE_VERSION);
+  self.skipWaiting();
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(urlsToCache))
-      .then(() => self.skipWaiting())
+    // Delete every old cache unconditionally
+    caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k))))
+      .then(() => caches.open(CACHE_NAME).then(cache => cache.add(OFFLINE_FALLBACK)))
   );
 });
 
-// Activate event - clean up old caches
+// On activate: take control of all tabs immediately
 self.addEventListener('activate', event => {
+  console.log('[SW] Activating version', CACHE_VERSION);
   event.waitUntil(
-    caches.keys().then(cacheNames => {
-      return Promise.all(
-        cacheNames.map(cacheName => {
-          if (cacheName !== CACHE_NAME) {
-            return caches.delete(cacheName);
-          }
-        })
-      );
-    }).then(() => self.clients.claim())
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
   );
 });
 
-// Fetch event - serve from cache, fallback to network
+// Fetch: ALWAYS go to network, never serve stale cache for app files
+// Only use cache if completely offline
 self.addEventListener('fetch', event => {
+  if (event.request.method !== 'GET') return;
+
   event.respondWith(
-    caches.match(event.request)
+    fetch(event.request, { cache: 'no-store' })  // tell browser: bypass HTTP cache too
       .then(response => {
-        // Cache hit - return response
-        if (response) {
-          return response;
-        }
-        
-        // Clone the request
-        const fetchRequest = event.request.clone();
-        
-        return fetch(fetchRequest).then(response => {
-          // Check if valid response
-          if (!response || response.status !== 200 || response.type !== 'basic') {
-            return response;
-          }
-          
-          // Clone the response
-          const responseToCache = response.clone();
-          
-          caches.open(CACHE_NAME).then(cache => {
-            cache.put(event.request, responseToCache);
-          });
-          
-          return response;
-        });
+        return response;
+      })
+      .catch(() => {
+        // Truly offline — serve cached fallback
+        return caches.match(event.request)
+          .then(cached => cached || caches.match(OFFLINE_FALLBACK));
       })
   );
 });
