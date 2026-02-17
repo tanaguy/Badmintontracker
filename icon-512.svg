@@ -1,0 +1,22 @@
+<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="512" height="512" fill="#3B82F6" rx="100"/>
+  
+  <!-- Shuttlecock -->
+  <g transform="translate(256, 256)">
+    <!-- Feathers -->
+    <path d="M -70,-110 L -40,-40 L -70,0 Z" fill="white" opacity="0.9"/>
+    <path d="M -40,-110 L -15,-40 L -40,0 Z" fill="white"/>
+    <path d="M -15,-110 L 15,-40 L -15,0 Z" fill="white"/>
+    <path d="M 15,-110 L 40,-40 L 15,0 Z" fill="white"/>
+    <path d="M 40,-110 L 70,-40 L 40,0 Z" fill="white" opacity="0.9"/>
+    
+    <!-- Cork base -->
+    <circle cx="0" cy="15" r="35" fill="#FCD34D"/>
+    <circle cx="0" cy="15" r="25" fill="#F59E0B"/>
+  </g>
+  
+  <!-- Text -->
+  <text x="256" y="420" font-family="Arial, sans-serif" font-size="60" font-weight="bold" fill="white" text-anchor="middle">Badminton</text>
+  <text x="256" y="470" font-family="Arial, sans-serif" font-size="40" font-weight="normal" fill="white" text-anchor="middle" opacity="0.9">Tracker</text>
+</svg>
