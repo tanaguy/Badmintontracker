@@ -376,6 +376,14 @@ function showStartSession() {
 
 function renderSessionPlayerList() {
     document.getElementById('selected-count').textContent = state.selectedPlayers.size;
+    
+    // Update select-all button text
+    const allSelected = state.selectedPlayers.size === state.players.length && state.players.length > 0;
+    const selectAllBtn = document.getElementById('select-all-btn');
+    if (selectAllBtn) {
+        selectAllBtn.textContent = allSelected ? 'Deselect All' : 'Select All';
+    }
+    
     document.getElementById('session-player-list').innerHTML = state.players.map(p => {
         const sel = state.selectedPlayers.has(p.id);
         const av = p.avatar ? `<img src="${p.avatar}" alt="${p.name}">` : p.name.charAt(0).toUpperCase();
@@ -387,6 +395,18 @@ function renderSessionPlayerList() {
 
 function togglePlayerSelection(id) {
     state.selectedPlayers.has(id) ? state.selectedPlayers.delete(id) : state.selectedPlayers.add(id);
+    renderSessionPlayerList();
+    renderMatchSuggestion();
+}
+
+// ========== FEATURE: SELECT ALL / DESELECT ALL ==========
+function toggleSelectAll() {
+    const allSelected = state.selectedPlayers.size === state.players.length;
+    if (allSelected) {
+        state.selectedPlayers.clear();
+    } else {
+        state.players.forEach(p => state.selectedPlayers.add(p.id));
+    }
     renderSessionPlayerList();
     renderMatchSuggestion();
 }
@@ -759,6 +779,23 @@ function adjustMatchCount(delta) {
     document.getElementById('match-count').textContent = state.matchCount;
     renderPlayPrediction(state.matchType, state.matchCount);
 }
+// ========== FEATURE: SHUFFLE MATCHES ==========
+function shuffleMatches() {
+    if (state.pendingMatches.length === 0) {
+        showToast('No matches to shuffle!', 'error');
+        return;
+    }
+    // Fisher-Yates shuffle
+    const arr = [...state.pendingMatches];
+    for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    state.pendingMatches = arr;
+    render();
+    showToast(`${arr.length} match${arr.length !== 1 ? 'es' : ''} shuffled! 🎲`);
+}
+
 function generateMatches() {
     const before = state.pendingMatches.length;
     document.getElementById('skill-matching').checked

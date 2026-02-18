@@ -12,7 +12,7 @@
     <title>Badminton Tracker</title>
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="icon-192.svg">
-    <link rel="stylesheet" href="styles.css?v=20260217_01">
+    <link rel="stylesheet" href="styles.css?v=20260217_02">
 </head>
 <body>
 <div id="app" class="app-container">
@@ -49,7 +49,10 @@
                     </div>
                     <button class="btn btn-danger btn-sm" onclick="endSession()">End Session</button>
                 </div>
-                <button class="btn btn-success btn-large" onclick="showMatchGenerator()">➕ Generate Matches</button>
+                <div class="session-actions">
+                    <button class="btn btn-success btn-large" onclick="showMatchGenerator()">➕ Generate Matches</button>
+                    <button class="btn btn-secondary btn-shuffle" onclick="shuffleMatches()" title="Randomly shuffle the match order">🎲 Shuffle Queue</button>
+                </div>
                 <div id="match-queue" class="match-queue"></div>
             </div>
         </div>
@@ -105,7 +108,10 @@
             <input type="text" id="new-session-name" class="input" placeholder="e.g., Friday Evening">
         </div>
         <div class="form-group">
-            <label>Select Players (<span id="selected-count">0</span> selected)</label>
+            <div class="player-select-header">
+                    <label>Select Players (<span id="selected-count">0</span> selected)</label>
+                    <button type="button" id="select-all-btn" class="btn-text-link" onclick="toggleSelectAll()">Select All</button>
+                </div>
             <div id="session-player-list" class="player-select-list"></div>
             <!-- Smart match suggestion (Feature 2) -->
             <div id="match-suggestion" class="match-suggestion-box hidden"></div>
@@ -277,6 +283,6 @@
 <!-- REGULAR TOAST -->
 <div id="toast" class="toast"></div>
 
-<script src="app.js?v=20260217_01"></script>
+<script src="app.js?v=20260217_02"></script>
 </body>
 </html>
