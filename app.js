@@ -396,7 +396,6 @@ function renderSessionPlayerList() {
 function togglePlayerSelection(id) {
     state.selectedPlayers.has(id) ? state.selectedPlayers.delete(id) : state.selectedPlayers.add(id);
     renderSessionPlayerList();
-    renderMatchSuggestion();
 }
 
 // ========== FEATURE: SELECT ALL / DESELECT ALL ==========
@@ -408,10 +407,8 @@ function toggleSelectAll() {
         state.players.forEach(p => state.selectedPlayers.add(p.id));
     }
     renderSessionPlayerList();
-    renderMatchSuggestion();
 }
 
-// ========== FEATURE: SMART MATCH SUGGESTION ==========
 function calcSuggestedMatches(playerCount, matchType) {
     if (playerCount < 2) return { singles: 0, doubles: 0 };
     // Minimum matches for everyone to play once per round
@@ -687,31 +684,8 @@ function showMatchGenerator() {
     document.getElementById('match-count').textContent = '1';
     document.getElementById('skill-matching').checked = false;
     document.querySelectorAll('[data-type]').forEach(b => b.classList.toggle('active', b.dataset.type === 'singles'));
-    renderGeneratorSuggestion('singles');
     renderPlayPrediction('singles', 1);
     showModal('match-generator-modal');
-}
-
-function renderGeneratorSuggestion(matchType) {
-    const el = document.getElementById('generator-suggestion');
-    if (!el || !state.currentSession) return;
-    const n = state.currentSession.playerIds.length;
-    const needed = matchType === 'singles' ? Math.ceil(n / 2) : Math.ceil(n / 4);
-    const playersPerMatch = matchType === 'singles' ? 2 : 4;
-    if (n < playersPerMatch) { el.classList.add('hidden'); return; }
-    el.innerHTML = `
-        <div class="generator-suggestion">
-            <span class="suggestion-text">💡 <strong>${needed} match${needed !== 1 ? 'es' : ''}</strong> = everyone plays once (${n} players)</span>
-            <button class="suggestion-apply-btn" onclick="applySuggestedCount(${needed})">Use this</button>
-        </div>`;
-    el.classList.remove('hidden');
-}
-
-function applySuggestedCount(count) {
-    state.matchCount = count;
-    document.getElementById('match-count').textContent = count;
-    renderPlayPrediction(state.matchType, count);
-    showToast(`Set to ${count} match${count !== 1 ? 'es' : ''} ✓`);
 }
 
 // ========== FEATURE: PLAY COUNT PREDICTION ==========
@@ -771,7 +745,6 @@ function renderPlayPrediction(matchType, matchCount) {
 function selectMatchType(type) {
     state.matchType = type;
     document.querySelectorAll('[data-type]').forEach(b => b.classList.toggle('active', b.dataset.type === type));
-    renderGeneratorSuggestion(type);
     renderPlayPrediction(type, state.matchCount);
 }
 function adjustMatchCount(delta) {
@@ -779,173 +752,26 @@ function adjustMatchCount(delta) {
     document.getElementById('match-count').textContent = state.matchCount;
     renderPlayPrediction(state.matchType, state.matchCount);
 }
-// ========== FEATURE: SHUFFLE WITH FAIR ROTATION ==========
-// Generate matches using equal rotation (fair) but randomize the pairings
-function shuffleWithFairRotation() {
-    if (!state.currentSession) return;
-    const sessionPlayers = state.players.filter(p => state.currentSession.playerIds.includes(p.id));
-    
-    showRandomMatchModal(sessionPlayers);
-}
-
-function showRandomMatchModal(players) {
-    const html = `
-        <div class="modal" id="random-match-modal">
-            <div class="modal-header">
-                <h2>🎲 Shuffle & Generate</h2>
-                <button class="close-btn" onclick="closeRandomMatchModal()">✕</button>
-            </div>
-            <div class="modal-body">
-                <p style="color:var(--gray-600);margin-bottom:1rem;font-size:.9rem;">
-                    Random pairings with fair rotation — everyone plays equally!
-                </p>
-                <div class="form-group">
-                    <label>Match Type</label>
-                    <div class="segmented-control">
-                        <button class="seg-btn active" data-type="singles" onclick="selectRandomType('singles')">⚡ Singles</button>
-                        <button class="seg-btn" data-type="doubles" onclick="selectRandomType('doubles')">👥 Doubles</button>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Number of Matches</label>
-                    <div class="stepper">
-                        <button class="stepper-btn" onclick="adjustRandomCount(-1)">−</button>
-                        <span id="random-count">1</span>
-                        <button class="stepper-btn" onclick="adjustRandomCount(1)">+</button>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeRandomMatchModal()">Cancel</button>
-                <button class="btn btn-success" onclick="executeRandomGeneration()">🎲 Generate</button>
-            </div>
-        </div>`;
-    
-    document.body.insertAdjacentHTML('beforeend', html);
-    document.getElementById('modal-overlay').classList.remove('hidden');
-    state._randomType = 'singles';
-    state._randomCount = 1;
-}
-
-function closeRandomMatchModal() {
-    const modal = document.getElementById('random-match-modal');
-    if (modal) modal.remove();
-    document.getElementById('modal-overlay').classList.add('hidden');
-}
-
-function selectRandomType(type) {
-    state._randomType = type;
-    document.querySelectorAll('#random-match-modal [data-type]').forEach(b => {
-        b.classList.toggle('active', b.dataset.type === type);
-    });
-}
-
-function adjustRandomCount(delta) {
-    state._randomCount = Math.max(1, Math.min(30, state._randomCount + delta));
-    document.getElementById('random-count').textContent = state._randomCount;
-}
-
-function executeRandomGeneration() {
-    const matchType = state._randomType;
-    const count = state._randomCount;
-    
-    if (matchType === 'singles') {
-        generateSinglesRandomPairings(count);
-    } else {
-        generateDoublesRandomPairings(count);
+// ========== SHUFFLE QUEUE ==========
+function shuffleQueue() {
+    if (state.pendingMatches.length === 0) {
+        showToast('No matches in queue!', 'error');
+        return;
+    }
+    if (state.pendingMatches.length === 1) {
+        showToast('Need at least 2 matches to shuffle', 'error');
+        return;
     }
     
-    closeRandomMatchModal();
+    // Fisher-Yates shuffle
+    const arr = [...state.pendingMatches];
+    for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    state.pendingMatches = arr;
     render();
-    showToast(`${count} match${count !== 1 ? 'es' : ''} generated with random pairings! 🎲`);
-}
-
-// Generate singles with fair rotation but random pairings
-function generateSinglesRandomPairings(count) {
-    const sessionPlayers = state.players.filter(p => state.currentSession.playerIds.includes(p.id));
-    if (sessionPlayers.length < 2) {
-        showToast('Need at least 2 players for singles', 'error');
-        return;
-    }
-    
-    for (let i = 0; i < count; i++) {
-        const counts = getPlayerGameCounts();
-        
-        // Group players by their game count
-        const byCount = {};
-        sessionPlayers.forEach(p => {
-            const c = counts[p.id] || 0;
-            if (!byCount[c]) byCount[c] = [];
-            byCount[c].push(p);
-        });
-        
-        // Get the lowest count groups
-        const sortedCounts = Object.keys(byCount).map(Number).sort((a, b) => a - b);
-        let selected = [];
-        
-        // Pick 2 players from the lowest game count tiers, randomizing among equals
-        for (const count of sortedCounts) {
-            const pool = byCount[count].sort(() => Math.random() - 0.5); // randomize this tier
-            selected.push(...pool);
-            if (selected.length >= 2) break;
-        }
-        
-        // Take first 2 from the randomized selection
-        state.matchCounter++;
-        saveData(DB.matchCounter, state.matchCounter);
-        state.pendingMatches.push({
-            id: generateId(),
-            matchType: 'singles',
-            matchNumber: state.matchCounter,
-            team1Players: [selected[0].id],
-            team2Players: [selected[1].id]
-        });
-    }
-}
-
-// Generate doubles with fair rotation but random pairings and team splits
-function generateDoublesRandomPairings(count) {
-    const sessionPlayers = state.players.filter(p => state.currentSession.playerIds.includes(p.id));
-    if (sessionPlayers.length < 4) {
-        showToast('Need at least 4 players for doubles', 'error');
-        return;
-    }
-    
-    for (let i = 0; i < count; i++) {
-        const counts = getPlayerGameCounts();
-        
-        // Group players by their game count
-        const byCount = {};
-        sessionPlayers.forEach(p => {
-            const c = counts[p.id] || 0;
-            if (!byCount[c]) byCount[c] = [];
-            byCount[c].push(p);
-        });
-        
-        // Get the lowest count groups
-        const sortedCounts = Object.keys(byCount).map(Number).sort((a, b) => a - b);
-        let selected = [];
-        
-        // Pick 4 players from the lowest game count tiers, randomizing among equals
-        for (const count of sortedCounts) {
-            const pool = byCount[count].sort(() => Math.random() - 0.5); // randomize this tier
-            selected.push(...pool);
-            if (selected.length >= 4) break;
-        }
-        
-        // Take first 4 and randomly split into 2 teams
-        const fourPlayers = selected.slice(0, 4).sort(() => Math.random() - 0.5);
-        
-        state.matchCounter++;
-        saveData(DB.matchCounter, state.matchCounter);
-        state.pendingMatches.push({
-            id: generateId(),
-            matchType: 'doubles',
-            matchNumber: state.matchCounter,
-            team1Players: [fourPlayers[0].id, fourPlayers[1].id],
-            team2Players: [fourPlayers[2].id, fourPlayers[3].id]
-        });
-    }
+    showToast(`${arr.length} matches shuffled! 🎲`);
 }
 
 function generateMatches() {

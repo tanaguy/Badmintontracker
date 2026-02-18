@@ -12,7 +12,7 @@
     <title>Badminton Tracker</title>
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="icon-192.svg">
-    <link rel="stylesheet" href="styles.css?v=20260217_04">
+    <link rel="stylesheet" href="styles.css?v=20260218_01">
 </head>
 <body>
 <div id="app" class="app-container">
@@ -51,7 +51,7 @@
                 </div>
                 <div class="session-actions">
                     <button class="btn btn-success btn-large" onclick="showMatchGenerator()">➕ Generate Matches</button>
-                    <button class="btn btn-secondary btn-shuffle" onclick="shuffleWithFairRotation()" title="Fair rotation with random pairings">🎲 Shuffle Players</button>
+                    <button class="btn btn-secondary btn-shuffle" onclick="shuffleQueue()" title="Fair rotation with random pairings">🎲 Shuffle</button>
                 </div>
                 <div id="match-queue" class="match-queue"></div>
             </div>
@@ -113,8 +113,6 @@
                     <button type="button" id="select-all-btn" class="btn-text-link" onclick="toggleSelectAll()">Select All</button>
                 </div>
             <div id="session-player-list" class="player-select-list"></div>
-            <!-- Smart match suggestion (Feature 2) -->
-            <div id="match-suggestion" class="match-suggestion-box hidden"></div>
         </div>
     </div>
     <div class="modal-footer">
@@ -186,10 +184,6 @@
                 <button class="stepper-btn" onclick="adjustMatchCount(1)">+</button>
             </div>
         </div>
-        <!-- Smart suggestion -->
-        <div id="generator-suggestion" class="hidden"></div>
-        <!-- Play count prediction (Feature new) -->
-        <div id="play-prediction" class="hidden"></div>
 
         <div class="form-group">
             <label class="checkbox-label">
@@ -283,6 +277,6 @@
 <!-- REGULAR TOAST -->
 <div id="toast" class="toast"></div>
 
-<script src="app.js?v=20260217_04"></script>
+<script src="app.js?v=20260218_01"></script>
 </body>
 </html>
