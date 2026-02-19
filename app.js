@@ -68,6 +68,9 @@ let state = {
 
 // ========== INIT ==========
 document.addEventListener('DOMContentLoaded', () => {
+    // Ensure modal overlay is hidden on load
+    document.getElementById('modal-overlay').classList.add('hidden');
+    
     document.querySelectorAll('.tab-btn').forEach(btn =>
         btn.addEventListener('click', () => switchTab(btn.dataset.tab))
     );
@@ -348,13 +351,27 @@ function genSkillDoubles(players) {
 
 // ========== MODAL ==========
 function showModal(id) {
-    document.getElementById('modal-overlay').classList.remove('hidden');
-    document.getElementById(id).classList.remove('hidden');
+    const overlay = document.getElementById('modal-overlay');
+    if (overlay) {
+        overlay.classList.remove('hidden');
+        overlay.style.display = 'block';
+    }
+    const modal = document.getElementById(id);
+    if (modal) {
+        modal.classList.remove('hidden');
+    }
 }
 function closeModal(fromOverlay = false) {
     // If triggered by overlay click right after file picker closed, ignore it
     if (fromOverlay && state.filePickerJustClosed) return;
-    document.getElementById('modal-overlay').classList.add('hidden');
+    
+    // Force hide overlay with multiple methods to ensure it works
+    const overlay = document.getElementById('modal-overlay');
+    if (overlay) {
+        overlay.classList.add('hidden');
+        overlay.style.display = 'none';
+    }
+    
     document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
     state.editingPlayer = null; state.currentMatch = null; state.editingMatch = null;
     state.selectedPlayers.clear(); state.selectedAvatar = null; state.keepCurrentAvatar = true;
@@ -742,18 +759,18 @@ function showMatchGenerator() {
     document.querySelectorAll('[data-type]').forEach(b => b.classList.toggle('active', b.dataset.type === 'singles'));
     renderPlayPrediction('singles', 1);
     showModal('match-generator-modal');
-    renderPlayPrediction('singles', 1);
 }
 
-// ========== FEATURE: PLAY COUNT PREDICTION ==========
+function selectMatchType(type) {
     state.matchType = type;
     document.querySelectorAll('[data-type]').forEach(b => b.classList.toggle('active', b.dataset.type === type));
     renderPlayPrediction(type, state.matchCount);
 }
+
+
 function adjustMatchCount(delta) {
     state.matchCount = Math.max(1, Math.min(30, state.matchCount + delta));
     document.getElementById('match-count').textContent = state.matchCount;
-    renderPlayPrediction(state.matchType, state.matchCount);
     renderPlayPrediction(state.matchType, state.matchCount);
 }
 // ========== SHUFFLE PLAYER POSITIONS ==========

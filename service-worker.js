@@ -1,8 +1,8 @@
 // Badminton Tracker - Service Worker
-// Version: 20260218_02
+// Version: 20260218_03
 // Strategy: Cache-bust on every deploy, network-always for app files
 
-const CACHE_VERSION = '20260218_02';
+const CACHE_VERSION = '20260218_03';
 const CACHE_NAME = 'badminton-20260217_01';
 
 // Only cache these for offline fallback - NOT the main app files

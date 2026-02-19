@@ -258,7 +258,16 @@ body {
 }
 
 .modal-overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200; animation: fadeIn 0.2s;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 200;
+    animation: fadeIn 0.2s;
+    pointer-events: auto;
+}
+.modal-overlay.hidden {
+    display: none !important;
+    pointer-events: none !important;
 }
 .modal {
     position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white;
@@ -422,7 +431,7 @@ body {
 .toast.error { background: var(--danger); }
 .toast.success { background: #1F2937; }
 
-.hidden { display: none !important; }
+
 
 @media (max-width: 480px) {
     .skill-selector { grid-template-columns: repeat(3, 1fr); }
@@ -515,4 +524,12 @@ body {
 .pred-none {
     color: var(--text-lighter);
     font-size: 0.72rem;
+}
+
+
+/* CRITICAL: Must be last to override everything */
+.hidden {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
 }
