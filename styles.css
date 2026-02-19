@@ -433,3 +433,86 @@ body {
     .session-actions { flex-direction: column; gap: 0.75rem; }
     .btn-shuffle { width: 100%; }
 }
+
+/* ========== PLAY COUNT PREDICTION ========== */
+#play-prediction {
+    background: var(--bg);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.875rem 1rem;
+    margin-top: 1rem;
+}
+.pred-header {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-light);
+    margin-bottom: 0.6rem;
+}
+.pred-list { display: flex; flex-direction: column; gap: 0.4rem; }
+.pred-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.pred-avatar {
+    width: 22px; height: 22px;
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+}
+.pred-initial {
+    display: inline-flex;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: white;
+    font-size: 0.65rem;
+    font-weight: 700;
+    align-items: center;
+    justify-content: center;
+}
+.pred-name {
+    font-size: 0.8rem;
+    color: var(--text);
+    width: 72px;
+    flex-shrink: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.pred-bar-wrap {
+    flex: 1;
+    height: 8px;
+    background: rgba(132, 204, 22, 0.15);
+    border-radius: 4px;
+    overflow: hidden;
+}
+.pred-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary), #65A30D);
+    border-radius: 4px;
+    transition: width 0.35s ease;
+    min-width: 4px;
+}
+.pred-count {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text);
+    min-width: 44px;
+    text-align: right;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    justify-content: flex-end;
+}
+.pred-added {
+    background: rgba(132,204,22,0.15);
+    color: var(--primary-dark);
+    border-radius: 0.3rem;
+    padding: 0.05rem 0.3rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+.pred-none {
+    color: var(--text-lighter);
+    font-size: 0.72rem;
+}

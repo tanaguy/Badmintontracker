@@ -678,17 +678,8 @@ function saveEditMatch() {
     showToast('Match updated! ✅');
 }
 
-// ========== MATCH GENERATOR ==========
-function showMatchGenerator() {
-    state.matchType = 'singles'; state.matchCount = 1;
-    document.getElementById('match-count').textContent = '1';
-    document.getElementById('skill-matching').checked = false;
-    document.querySelectorAll('[data-type]').forEach(b => b.classList.toggle('active', b.dataset.type === 'singles'));
-    renderPlayPrediction('singles', 1);
-    showModal('match-generator-modal');
-}
 
-// ========== FEATURE: PLAY COUNT PREDICTION ==========
+// ========== PLAY COUNT PREDICTION ==========
 function renderPlayPrediction(matchType, matchCount) {
     const el = document.getElementById('play-prediction');
     if (!el || !state.currentSession) return;
@@ -742,7 +733,19 @@ function renderPlayPrediction(matchType, matchCount) {
         <div class="pred-list">${rows}</div>`;
     el.classList.remove('hidden');
 }
-function selectMatchType(type) {
+
+// ========== MATCH GENERATOR ==========
+function showMatchGenerator() {
+    state.matchType = 'singles'; state.matchCount = 1;
+    document.getElementById('match-count').textContent = '1';
+    document.getElementById('skill-matching').checked = false;
+    document.querySelectorAll('[data-type]').forEach(b => b.classList.toggle('active', b.dataset.type === 'singles'));
+    renderPlayPrediction('singles', 1);
+    showModal('match-generator-modal');
+    renderPlayPrediction('singles', 1);
+}
+
+// ========== FEATURE: PLAY COUNT PREDICTION ==========
     state.matchType = type;
     document.querySelectorAll('[data-type]').forEach(b => b.classList.toggle('active', b.dataset.type === type));
     renderPlayPrediction(type, state.matchCount);
@@ -751,27 +754,74 @@ function adjustMatchCount(delta) {
     state.matchCount = Math.max(1, Math.min(30, state.matchCount + delta));
     document.getElementById('match-count').textContent = state.matchCount;
     renderPlayPrediction(state.matchType, state.matchCount);
+    renderPlayPrediction(state.matchType, state.matchCount);
 }
-// ========== SHUFFLE QUEUE ==========
-function shuffleQueue() {
+// ========== SHUFFLE PLAYER POSITIONS ==========
+// Redistributes players randomly across existing matches while maintaining match count
+function shufflePlayerPositions() {
     if (state.pendingMatches.length === 0) {
         showToast('No matches in queue!', 'error');
         return;
     }
-    if (state.pendingMatches.length === 1) {
-        showToast('Need at least 2 matches to shuffle', 'error');
-        return;
+    
+    // Collect all unique players from pending matches
+    const allPlayers = new Set();
+    state.pendingMatches.forEach(match => {
+        match.team1Players.forEach(id => allPlayers.add(id));
+        match.team2Players.forEach(id => allPlayers.add(id));
+    });
+    renderPlayPrediction(type, state.matchCount);
+    
+    const playerArray = Array.from(allPlayers);
+    
+    // Separate by match type
+    const singleMatches = state.pendingMatches.filter(m => m.matchType === 'singles');
+    const doubleMatches = state.pendingMatches.filter(m => m.matchType === 'doubles');
+    
+    // Fisher-Yates shuffle the player array
+    const shuffled = [...playerArray];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
     
-    // Fisher-Yates shuffle
-    const arr = [...state.pendingMatches];
-    for (let i = arr.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [arr[i], arr[j]] = [arr[j], arr[i]];
+    let playerIndex = 0;
+    const newMatches = [];
+    
+    // Reassign singles matches
+    singleMatches.forEach(match => {
+        if (playerIndex + 1 < shuffled.length) {
+            newMatches.push({
+                ...match,
+                team1Players: [shuffled[playerIndex]],
+                team2Players: [shuffled[playerIndex + 1]]
+            });
+            playerIndex += 2;
+        }
+    });
+    
+    // Reassign doubles matches
+    doubleMatches.forEach(match => {
+        if (playerIndex + 3 < shuffled.length) {
+            // Randomly decide team splits
+            const fourPlayers = shuffled.slice(playerIndex, playerIndex + 4).sort(() => Math.random() - 0.5);
+            newMatches.push({
+                ...match,
+                team1Players: [fourPlayers[0], fourPlayers[1]],
+                team2Players: [fourPlayers[2], fourPlayers[3]]
+            });
+            playerIndex += 4;
+        }
+    });
+    
+    // If we couldn't reassign all matches (odd player count), keep original
+    if (newMatches.length === state.pendingMatches.length) {
+        state.pendingMatches = newMatches;
+        render();
+        showToast(`Players shuffled across ${newMatches.length} matches! 🎲`);
+    } else {
+        showToast('Cannot shuffle - uneven player distribution', 'error');
     }
-    state.pendingMatches = arr;
-    render();
-    showToast(`${arr.length} matches shuffled! 🎲`);
 }
 
 function generateMatches() {
